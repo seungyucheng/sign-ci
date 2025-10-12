@@ -1,0 +1,47 @@
+name: iOS App Signing
+
+on:
+  repository_dispatch:
+    types: [resign]
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'Job ID to process'
+        required: true
+        type: string
+      account_id:
+        description: 'Account ID to process'
+        required: true
+        type: string
+
+jobs:
+  sign:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      ACCOUNT_ID: "${{ inputs.account_id || github.event.client_payload.account_id }}"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Fastlane Session
+        uses: actions/cache@v4
+        with:
+          path: ~/.fastlane
+          key: session-${{ env.ACCOUNT_ID }}
+          restore-keys: |
+            session
+
+      - name: Sign IPA
+        env:
+          # Support both workflow_dispatch (manual) and repository_dispatch (API)
+          # workflow_dispatch uses 'inputs.*', repository_dispatch uses 'github.event.client_payload.*'
+          SECRET_URL: "${{ secrets.SECRET_URL }}"
+          API_TOKEN: "${{ secrets.API_TOKEN }}"
+          JOB_ID: "${{ inputs.job_id || github.event.client_payload.job_id }}"
+          SECRET_KEY: "${{ secrets.SECRET_KEY }}"
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install pycryptodome cryptography
+          PYTHONUNBUFFERED=1 ./sign.py
