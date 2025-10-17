@@ -34,7 +34,7 @@ The signing tool communicates with the backend server through the following webh
 - `POST /api/v1/webhook/job/complete` - Mark job as completed
 - `POST /api/v1/webhook/job/fail` - Report job failure
 
-### Certificate & Profile Management  
+### Certificate & Profile Management
 - `POST /api/v1/webhook/certificate/status` - Report certificate generation status
 - `POST /api/v1/webhook/profile/status` - Report provisioning profile status
 
@@ -62,7 +62,7 @@ curl -X POST \
   http://localhost:7020/api/v1/webhook/job/start
 ```
 
-## Job Data 
+## Job Data
 
 ```json
 {
@@ -198,6 +198,42 @@ The system includes comprehensive error handling:
 - **Secure Keychain**: Temporary keychains are created with secure passwords
 - **Clean Exit**: All sensitive data is cleaned up after job completion
 
+## Utility Functions
+
+### AES Decryption Function
+
+The project includes a utility function for decrypting AES 256 CBC encrypted data with PKCS7 padding:
+
+```python
+from utils import decrypt_aes_256_cbc_pkcs7
+
+# Decrypt encrypted data
+decrypted_text = decrypt_aes_256_cbc_pkcs7(
+    encrypted_data="uD7q58FjwIaeqhBdeHfk0g==",  # Base64 encoded encrypted data
+    key_string="pv3kd093jd9lep830d93lo93e99e933k",  # Key as UTF-8 string
+    iv_string="pv3kd093jd9lep83"  # IV as UTF-8 string
+)
+```
+
+**Function Parameters:**
+- `encrypted_data`: The encrypted data (can be base64 string or bytes)
+- `key_string`: The encryption key as UTF-8 string
+- `iv_string`: The initialization vector as UTF-8 string
+
+**Requirements:**
+- Either `cryptography` or `pycryptodome` library must be installed
+- Install with: `pip install cryptography`
+
+**How it works:**
+1. Converts the UTF-8 key string to a 32-byte AES key using SHA-256
+2. Converts the UTF-8 IV string to a 16-byte IV using MD5
+3. Decodes base64 data if provided as string
+4. Decrypts using AES 256 CBC mode
+5. Removes PKCS7 padding
+6. Returns the decrypted text as a UTF-8 string
+
+This function is used to decrypt Apple Developer account passwords and other sensitive data in the signing process.
+
 ## Webhook API Reference
 
 ### Authentication
@@ -264,7 +300,7 @@ X-API-Token: your-token
 
 {
   "job_id": "uuid",
-  "status": "completed", 
+  "status": "completed",
   "message": "Provisioning profile created",
   "profile_data": "base64-encoded-profile-data"
 }

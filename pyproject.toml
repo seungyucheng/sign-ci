@@ -1,2 +1,14 @@
 [tool.ruff]
 line-length = 119
+
+[project]
+name = "sign"
+version = "0.0.1"
+description = "Sign iOS apps"
+authors = [
+    { name = "Damon Cheng", email = "damon.cheng@seungyu.cn" }
+]
+dependencies = [
+    "pycryptodome",
+    "cryptography",
+]

@@ -18,6 +18,7 @@ import string
 import tempfile
 import json
 from multiprocessing.pool import ThreadPool
+import utils
 
 secret_url = os.path.expandvars("$SECRET_URL").strip().rstrip("/")
 secret_key = os.path.expandvars("$SECRET_KEY")
@@ -161,10 +162,10 @@ def webhook_request(
 ):
     """Make authenticated webhook request to server"""
     import json
-    
+
     url = f"{secret_url}/api/v1/webhook/{endpoint}"
     json_data = json.dumps(data)
-    
+
     return run_process(
         "curl",
         "-X", method,
@@ -201,7 +202,7 @@ def report_certificate_status(status: str, message: str = "", cert_data: Optiona
         }
         if cert_data:
             data["certificate_data"] = cert_data
-        
+
         webhook_request("certificate/status", data)
         print(f"Certificate status reported: {status} - {message}")
     except Exception as e:
@@ -218,7 +219,7 @@ def report_profile_status(status: str, message: str = "", profile_data: Optional
         }
         if profile_data:
             data["profile_data"] = profile_data
-        
+
         webhook_request("profile/status", data)
         print(f"Profile status reported: {status} - {message}")
     except Exception as e:
@@ -258,10 +259,10 @@ def get_job_info():
     try:
         result = webhook_request("job/start", {"job_id": job_id})
         response_data = json.loads(decode_clean(result.stdout))
-        
+
         if response_data.get("code") != 1:
             raise Exception(f"Failed to get job info: {response_data.get('message', 'Unknown error')}")
-        
+
         return response_data.get("data")
     except Exception as e:
         print(f"Failed to get job info: {e}")
@@ -451,7 +452,7 @@ def fastlane_auth(account_name: str, account_pass: str, team_id: str):
                         continue
             except Exception as e:
                 print(f"Failed to get 2FA from server: {e}")
-                
+
             # If no 2FA available, wait a bit and try again
             print("Waiting for 2FA code from server...")
         time.sleep(1)
@@ -524,7 +525,7 @@ def fastlane_register_app(
     my_env["FASTLANE_TEAM_ID"] = team_id
 
     report_certificate_status("in_progress", f"Registering app {bundle_id}")
-    
+
     # no-op if already exists
     run_process(
         "fastlane",
@@ -656,7 +657,7 @@ def fastlane_get_prov_profile(
             env=my_env,
         )
         shutil.copy2(Path(tmpdir_str).joinpath("prov.mobileprovision"), out_file)
-        
+
     report_profile_status("completed", f"Provisioning profile generated for {bundle_id}")
 
 
@@ -843,6 +844,8 @@ class Signer:
     components: List[Path]
     is_mac_app: bool
 
+    def gen_main_bundle_id(self, appleDeveloperAccount: str):
+        return generate_bundle_id_from_email(appleDeveloperAccount)
     def gen_id(self, input_id: str):
         """
         Encodes the provided id into a different but constant id that
@@ -899,7 +902,7 @@ class Signer:
                 self.main_bundle_id = opts.bundle_id
             elif opts.encode_ids:
                 print("Using encoded original bundle id")
-                self.main_bundle_id = self.gen_id(self.old_main_bundle_id)
+                self.main_bundle_id = self.gen_main_bundle_id(self.opts.account_name)
                 if not self.opts.force_original_id and self.old_main_bundle_id != self.main_bundle_id:
                     self.mappings[self.old_main_bundle_id] = self.main_bundle_id
             else:
@@ -1248,7 +1251,7 @@ class Signer:
             jobs: Dict[Path, subprocess.Popen[bytes]] = {}
             total_components = len(job_defs)
             current_component = 0
-            
+
             for component, data in job_defs:
                 current_component += 1
                 progress = 50 + (current_component * 30 // total_components)  # 50-80% for signing components
@@ -1309,17 +1312,17 @@ class Signer:
 def run(job_data, account_data, ipa_data):
     print("Initializing signing process...")
     report_progress(5, "Initializing job")
-    
+
     print("Creating keychain...")
     report_progress(10, "Setting up keychain")
-    
+
     # Check if we have a certificate file, if not, we'll generate one
     cert_file = Path("cert.p12")
     cert_pass = "defaultpass"
     keychain_name = "ios-signer-" + rand_str(8)
     team_id = ""
     user_bundle_id = ""
-    
+
     if not cert_file.exists():
         print("No certificate file found, will generate certificate during signing process")
         common_names = {"Development": "Apple Development", "Distribution": None}
@@ -1352,25 +1355,24 @@ def run(job_data, account_data, ipa_data):
     account_name_file = Path("account_name.txt")
     account_pass_file = Path("account_pass.txt")
     bundle_name = Path("bundle_name.txt")
-    
+
     # Write account data from server
     if account_data and account_data.get("email") and account_data.get("password"):
         with open(account_name_file, "w") as f:
             f.write(account_data["email"])
-        
         # Handle encrypted password - decode base64 if it looks encoded
         password = account_data["password"]
         if password and len(password) > 10 and password.endswith("=="):
             try:
                 import base64
-                decrypted_password = base64.b64decode(password).decode('utf-8')
+                decrypted_password = utils.decrypt_aes_cbc_pkcs7(password, secret_key)
                 print("Decoded base64 password")
             except Exception as e:
                 print(f"Failed to decode password, using as-is: {e}")
                 decrypted_password = password
         else:
             decrypted_password = password
-            
+
         with open(account_pass_file, "w") as f:
             f.write(decrypted_password)
         print("Using developer account from server")
@@ -1421,10 +1423,10 @@ def run(job_data, account_data, ipa_data):
     node_upload(signed_ipa, f"{secret_url}/jobs/{job_id}/tus/", capture=False)
     file_id = read_file(Path("file_id.txt"))
     bundle_id = read_file(Path("bundle_id.txt"))
-    
+
     # Get file size for completion report
     file_size = signed_ipa.stat().st_size if signed_ipa.exists() else 0
-    
+
     # Use new webhook system for completion
     complete_job(f"signed/{job_id}/signed.ipa", file_size)
     report_progress(100, "Job completed successfully")
@@ -1449,7 +1451,7 @@ def main():
     if not job_id:
         print("ERROR: JOB_ID environment variable is required")
         sys.exit(1)
-    
+
     if not api_token:
         print("ERROR: API_TOKEN environment variable is required")
         sys.exit(1)
@@ -1463,12 +1465,12 @@ def main():
         job_data = job_info.get("job", {})
         account_data = job_info.get("account", {})
         ipa_data = job_info.get("ipa", {})
-        
+
         print(f"Job data received: {job_data.get('job_type', 'unknown')}")
-        
+
         # Extract required data from job info
         input_path = job_data.get("input_path", "")
-        
+
         # Generate bundle ID from developer email
         developer_email = account_data.get("email", "")
         if developer_email:
@@ -1478,7 +1480,7 @@ def main():
             user_bundle_id = None
 
         keychain_name = "ios-signer-" + rand_str(8)
-        
+
     except Exception as e:
         error_msg = f"Failed to fetch job information: {e}"
         print(error_msg)
@@ -1500,7 +1502,7 @@ def main():
     failed = False
     error_message = ""
     error_details = ""
-    
+
     try:
         run(job_data, account_data, ipa_data)
     except Exception as e:
@@ -1515,7 +1517,7 @@ def main():
             security_remove_keychain(keychain_name)
         except Exception as e:
             print(f"Warning: Failed to remove keychain: {e}")
-        
+
         if failed:
             fail_job(error_message, error_details)
             sys.exit(1)
