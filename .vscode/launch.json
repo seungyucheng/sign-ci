@@ -1,0 +1,21 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "env": {
+                "JOB_ID": "5c9806a5-e3eb-4ce4-bcdb-4e1b5d39ef2e",
+                "API_TOKEN": "2261ce09-0030-4070-8079-6bab3a25fa33",
+                "JOB_URL": "http://localhost:7020",
+                "SECRET_KEY": ""
+            }
+        }
+    ]
+}

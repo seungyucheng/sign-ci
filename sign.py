@@ -2,6 +2,7 @@
 
 import copy
 import os
+from pickle import FALSE
 import re
 import sys
 import time
@@ -20,8 +21,9 @@ from multiprocessing.pool import ThreadPool
 
 secret_url = os.path.expandvars("$SECRET_URL").strip().rstrip("/")
 secret_key = os.path.expandvars("$SECRET_KEY")
+api_token = os.path.expandvars("$API_TOKEN")
+job_id = os.path.expandvars("$JOB_ID")
 StrPath = Union[str, Path]
-
 
 def safe_glob(input: Path, pattern: str):
     for f in sorted(input.glob(pattern)):
@@ -149,6 +151,121 @@ def curl_with_auth(
         check=check,
         capture=capture,
     )
+
+
+def webhook_request(
+    endpoint: str,
+    data: Dict[str, Any],
+    method: str = "POST",
+    check: bool = True,
+):
+    """Make authenticated webhook request to server"""
+    import json
+    
+    url = f"{secret_url}/api/v1/webhook/{endpoint}"
+    json_data = json.dumps(data)
+    
+    return run_process(
+        "curl",
+        "-X", method,
+        "-H", "Content-Type: application/json",
+        "-H", f"X-API-Token: {api_token}",
+        "-d", json_data,
+        url,
+        check=check,
+        capture=True,
+    )
+
+
+def report_progress(progress: int, message: str = "", state: int = 1):
+    """Report job progress to server"""
+    try:
+        webhook_request("job/progress", {
+            "job_id": job_id,
+            "progress": progress,
+            "state": state,
+            "message": message
+        })
+        print(f"Progress reported: {progress}% - {message}")
+    except Exception as e:
+        print(f"Failed to report progress: {e}")
+
+
+def report_certificate_status(status: str, message: str = "", cert_data: Optional[str] = None):
+    """Report certificate generation status to server"""
+    try:
+        data = {
+            "job_id": job_id,
+            "status": status,
+            "message": message
+        }
+        if cert_data:
+            data["certificate_data"] = cert_data
+        
+        webhook_request("certificate/status", data)
+        print(f"Certificate status reported: {status} - {message}")
+    except Exception as e:
+        print(f"Failed to report certificate status: {e}")
+
+
+def report_profile_status(status: str, message: str = "", profile_data: Optional[str] = None):
+    """Report provisioning profile generation status to server"""
+    try:
+        data = {
+            "job_id": job_id,
+            "status": status,
+            "message": message
+        }
+        if profile_data:
+            data["profile_data"] = profile_data
+        
+        webhook_request("profile/status", data)
+        print(f"Profile status reported: {status} - {message}")
+    except Exception as e:
+        print(f"Failed to report profile status: {e}")
+
+
+def complete_job(output_path: str, file_size: int = 0):
+    """Mark job as completed"""
+    try:
+        webhook_request("job/complete", {
+            "job_id": job_id,
+            "output_path": output_path,
+            "file_size": file_size,
+            "status": "completed",
+            "message": "Job completed successfully"
+        })
+        print("Job marked as completed")
+    except Exception as e:
+        print(f"Failed to mark job as completed: {e}")
+
+
+def fail_job(error_message: str, error_details: str = ""):
+    """Mark job as failed"""
+    try:
+        webhook_request("job/fail", {
+            "job_id": job_id,
+            "message": error_message,
+            "error_details": error_details
+        })
+        print(f"Job marked as failed: {error_message}")
+    except Exception as e:
+        print(f"Failed to mark job as failed: {e}")
+
+
+def get_job_info():
+    """Get comprehensive job information from server"""
+    try:
+        result = webhook_request("job/start", {"job_id": job_id})
+        response_data = json.loads(decode_clean(result.stdout))
+        
+        if response_data.get("code") != 1:
+            raise Exception(f"Failed to get job info: {response_data.get('message', 'Unknown error')}")
+        
+        return response_data.get("data")
+    except Exception as e:
+        print(f"Failed to get job info: {e}")
+        raise
 
 
 def security_get_keychain_list():
@@ -322,15 +439,21 @@ def fastlane_auth(account_name: str, account_pass: str, team_id: str):
                 result = {"error_code": result, "stdout": stdout, "stderr": stderr}
                 raise Exception(f"Error logging in: {result}")
 
-            account_2fa_file = Path("account_2fa.txt")
-            result = curl_with_auth(
-                f"{secret_url}/jobs/{job_id}/2fa",
-                output=account_2fa_file,
-                check=False,
-            )
-            if result.returncode == 0:
-                account_2fa = read_file(account_2fa_file)
-                auth_pipe.communicate((account_2fa + "\n").encode())
+            # Try to get 2FA code from server
+            try:
+                result = webhook_request("job/2fa", {"job_id": job_id}, check=False)
+                if result.returncode == 0:
+                    response_data = json.loads(decode_clean(result.stdout))
+                    if response_data.get("code") == 1 and response_data.get("data", {}).get("code"):
+                        account_2fa = response_data["data"]["code"]
+                        auth_pipe.communicate((account_2fa + "\n").encode())
+                        print(f"Used 2FA code from server: {account_2fa}")
+                        continue
+            except Exception as e:
+                print(f"Failed to get 2FA from server: {e}")
+                
+            # If no 2FA available, wait a bit and try again
+            print("Waiting for 2FA code from server...")
         time.sleep(1)
 
 
@@ -400,6 +523,8 @@ def fastlane_register_app(
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
 
+    report_certificate_status("in_progress", f"Registering app {bundle_id}")
+    
     # no-op if already exists
     run_process(
         "fastlane",
@@ -507,6 +632,8 @@ def fastlane_get_prov_profile(
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
 
+    report_profile_status("in_progress", f"Generating provisioning profile for {bundle_id}")
+
     with tempfile.TemporaryDirectory() as tmpdir_str:
         run_process(
             "fastlane",
@@ -529,6 +656,8 @@ def fastlane_get_prov_profile(
             env=my_env,
         )
         shutil.copy2(Path(tmpdir_str).joinpath("prov.mobileprovision"), out_file)
+        
+    report_profile_status("completed", f"Provisioning profile generated for {bundle_id}")
 
 
 def codesign_dump_entitlements(component: Path) -> Dict[Any, Any]:
@@ -1113,11 +1242,18 @@ class Signer:
                     "If you receive a two-factor authentication (2FA) code, please submit it to the web service.",
                     sep="\n",
                 )
+                report_progress(40, "Authenticating with Apple Developer Portal")
                 fastlane_auth(self.opts.account_name, self.opts.account_pass, self.opts.team_id)
 
             jobs: Dict[Path, subprocess.Popen[bytes]] = {}
+            total_components = len(job_defs)
+            current_component = 0
+            
             for component, data in job_defs:
+                current_component += 1
+                progress = 50 + (current_component * 30 // total_components)  # 50-80% for signing components
                 print(f"Processing component {component}")
+                report_progress(progress, f"Signing component {current_component}/{total_components}")
 
                 for path in list(jobs.keys()):
                     pipe = jobs[path]
@@ -1170,51 +1306,91 @@ class Signer:
                 popen_check(pipe)
 
 
-def run():
+def run(job_data, account_data, ipa_data):
+    print("Initializing signing process...")
+    report_progress(5, "Initializing job")
+    
     print("Creating keychain...")
-    common_names = security_import(Path("cert.p12"), cert_pass, keychain_name)
-    if len(common_names) < 1:
-        raise Exception("No valid code signing certificate found, aborting.")
-    common_names = {
-        # "Apple Development" for paid dev account
-        # "iPhone Developer" for free dev account, etc
-        "Development": next((n for n in common_names if "Develop" in n), None),
-        "Distribution": next((n for n in common_names if "Distribution" in n), None),
-    }
-
-    if common_names["Distribution"] is not None:
-        print("Using distribution certificate")
-        common_name = common_names["Distribution"]
-        if "-d" in sign_args:
-            raise Exception("Debugging cannot be enabled on distribution certificate, use development.")
-    elif common_names["Development"] is not None:
-        print("Using development certificate")
-        common_name = common_names["Development"]
+    report_progress(10, "Setting up keychain")
+    
+    # Check if we have a certificate file, if not, we'll generate one
+    cert_file = Path("cert.p12")
+    cert_pass = "defaultpass"
+    keychain_name = "ios-signer-" + rand_str(8)
+    team_id = ""
+    user_bundle_id = ""
+    
+    if not cert_file.exists():
+        print("No certificate file found, will generate certificate during signing process")
+        common_names = {"Development": "Apple Development", "Distribution": None}
+        common_name = "Apple Development"
     else:
-        raise Exception("Unrecognized code signing certificate, aborting.")
+        common_names = security_import(cert_file, cert_pass, keychain_name)
+        if len(common_names) < 1:
+            raise Exception("No valid code signing certificate found, aborting.")
+        common_names = {
+            # "Apple Development" for paid dev account
+            # "iPhone Developer" for free dev account, etc
+            "Development": next((n for n in common_names if "Develop" in n), None),
+            "Distribution": next((n for n in common_names if "Distribution" in n), None),
+        }
 
+        if common_names["Distribution"] is not None:
+            print("Using distribution certificate")
+            common_name = common_names["Distribution"]
+
+        elif common_names["Development"] is not None:
+            print("Using development certificate")
+            common_name = common_names["Development"]
+        else:
+            raise Exception("Unrecognized code signing certificate, aborting.")
+
+    report_progress(15, "Certificate validation completed")
+
+    # Use account data from job info
     prov_profile = Path("prov.mobileprovision")
     account_name_file = Path("account_name.txt")
     account_pass_file = Path("account_pass.txt")
     bundle_name = Path("bundle_name.txt")
-    if account_name_file.is_file() and account_pass_file.is_file():
-        print("Using developer account")
-    elif prov_profile.is_file():
-        print("Using provisioning profile")
+    
+    # Write account data from server
+    if account_data and account_data.get("email") and account_data.get("password"):
+        with open(account_name_file, "w") as f:
+            f.write(account_data["email"])
+        
+        # Handle encrypted password - decode base64 if it looks encoded
+        password = account_data["password"]
+        if password and len(password) > 10 and password.endswith("=="):
+            try:
+                import base64
+                decrypted_password = base64.b64decode(password).decode('utf-8')
+                print("Decoded base64 password")
+            except Exception as e:
+                print(f"Failed to decode password, using as-is: {e}")
+                decrypted_password = password
+        else:
+            decrypted_password = password
+            
+        with open(account_pass_file, "w") as f:
+            f.write(decrypted_password)
+        print("Using developer account from server")
     else:
-        raise Exception("Developer account or provisioning profile required, found none.")
+        raise Exception("Developer account information required but not found in job data.")
 
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
         print("Extracting app...")
+        report_progress(20, "Extracting IPA")
         extract_zip(Path("unsigned.ipa"), temp_dir)
 
         tweaks_dir = Path("tweaks")
         if tweaks_dir.exists():
             print("Found tweaks, injecting...")
+            report_progress(25, "Injecting tweaks")
             inject_tweaks(temp_dir, tweaks_dir)
 
         print("Signing...")
+        report_progress(30, "Starting signing process")
         Signer(
             SignOpts(
                 temp_dir,
@@ -1223,61 +1399,126 @@ def run():
                 read_file(account_name_file) if account_name_file.is_file() else "",
                 read_file(account_pass_file) if account_pass_file.is_file() else "",
                 prov_profile if prov_profile.is_file() else None,
-                "" if "-n" in sign_args else user_bundle_id,
+                user_bundle_id,
                 read_file(bundle_name) if bundle_name.exists() else None,
-                "-d" in sign_args,
-                "-a" in sign_args,
-                "-m" in sign_args,
-                "-s" in sign_args,
-                "-e" in sign_args,
-                "-p" in sign_args,
-                "-o" in sign_args,
+                True,
+                True,
+                False,
+                False,
+                True,
+                False,
+                False,
             )
         ).sign()
 
+        report_progress(85, "Signing completed, packaging app")
         print("Packaging signed app...")
         signed_ipa = Path("signed.ipa")
         archive_zip(temp_dir, signed_ipa)
 
     print("Uploading...")
+    report_progress(90, "Uploading signed IPA")
     node_upload(signed_ipa, f"{secret_url}/jobs/{job_id}/tus/", capture=False)
     file_id = read_file(Path("file_id.txt"))
     bundle_id = read_file(Path("bundle_id.txt"))
-    curl_with_auth(f"{secret_url}/jobs/{job_id}/signed", [("file_id", file_id), ("bundle_id", bundle_id)])
+    
+    # Get file size for completion report
+    file_size = signed_ipa.stat().st_size if signed_ipa.exists() else 0
+    
+    # Use new webhook system for completion
+    complete_job(f"signed/{job_id}/signed.ipa", file_size)
+    report_progress(100, "Job completed successfully")
 
 
-if __name__ == "__main__":
+def generate_bundle_id_from_email(email: str) -> str:
+    """Generate bundle ID in format com.hs.xx where xx is derived from email"""
+    import hashlib
+    # Extract username part before @ and create a short hash
+    username = email.split('@')[0] if '@' in email else email
+    # Create a short hash from the username
+    hash_obj = hashlib.md5(username.encode())
+    short_hash = hash_obj.hexdigest()[:6]  # Take first 6 characters
+    return f"com.hs.{short_hash}"
+
+
+def main():
     print("Initializing dependencies...")
     network_init()
 
-    print("Downloading job files...")
-    job_archive = Path("job.tar")
-    node_download(secret_url + "/jobs", job_archive, capture=False)
-    extract_tar(job_archive, Path("."))
-    os.remove(job_archive)
+    # Job ID should be provided as environment variable
+    if not job_id:
+        print("ERROR: JOB_ID environment variable is required")
+        sys.exit(1)
+    
+    if not api_token:
+        print("ERROR: API_TOKEN environment variable is required")
+        sys.exit(1)
 
-    cert_pass = read_file("cert_pass.txt")
-    sign_args = read_file("args.txt")
-    job_id = read_file("id.txt")
-    user_bundle_id = read_file("user_bundle_id.txt")
-    if user_bundle_id.strip() == "":
-        user_bundle_id = None
-    team_id = read_file("team_id.txt")
-    keychain_name = "ios-signer-" + rand_str(8)
+    print(f"Processing job: {job_id}")
+
+    # Get job information from server - no more legacy file dependencies
+    try:
+        print("Fetching job information from server...")
+        job_info = get_job_info()
+        job_data = job_info.get("job", {})
+        account_data = job_info.get("account", {})
+        ipa_data = job_info.get("ipa", {})
+        
+        print(f"Job data received: {job_data.get('job_type', 'unknown')}")
+        
+        # Extract required data from job info
+        input_path = job_data.get("input_path", "")
+        
+        # Generate bundle ID from developer email
+        developer_email = account_data.get("email", "")
+        if developer_email:
+            user_bundle_id = generate_bundle_id_from_email(developer_email)
+            print(f"Generated bundle ID: {user_bundle_id}")
+        else:
+            user_bundle_id = None
+
+        keychain_name = "ios-signer-" + rand_str(8)
+        
+    except Exception as e:
+        error_msg = f"Failed to fetch job information: {e}"
+        print(error_msg)
+        fail_job(error_msg, str(traceback.format_exc()))
+        sys.exit(1)
 
     print("Downloading app...")
     unsigned_ipa = Path("unsigned.ipa")
-    node_download(secret_url + f"/jobs/{job_id}/unsigned", unsigned_ipa, capture=False)
+    try:
+       # Direct S3 URL - download directly
+        print(f"Downloading from S3 URL: {input_path}")
+        run_process("curl", "-L", "-o", str(unsigned_ipa), input_path)
+    except Exception as e:
+        error_msg = f"Failed to download unsigned IPA: {e}"
+        print(error_msg)
+        fail_job(error_msg, str(traceback.format_exc()))
+        sys.exit(1)
 
     failed = False
+    error_message = ""
+    error_details = ""
+    
     try:
-        run()
-    except:
+        run(job_data, account_data, ipa_data)
+    except Exception as e:
         failed = True
+        error_message = str(e)
+        error_details = traceback.format_exc()
+        print(f"ERROR: {error_message}")
         traceback.print_exc()
     finally:
         print("Cleaning up...")
-        security_remove_keychain(keychain_name)
+        try:
+            security_remove_keychain(keychain_name)
+        except Exception as e:
+            print(f"Warning: Failed to remove keychain: {e}")
+        
         if failed:
-            curl_with_auth(f"{secret_url}/jobs/{job_id}/fail")
+            fail_job(error_message, error_details)
             sys.exit(1)
+
+if __name__ == "__main__":
+    main()

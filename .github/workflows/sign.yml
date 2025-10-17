@@ -1,20 +1,39 @@
-name: CI
+name: iOS App Signing
 
 on:
   workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'Job ID to process'
+        required: true
+        type: string
+      job_url:
+        description: 'Job URL to process'
+        required: true
+        type: string
+      secret_key:
+        description: 'Secret key to decrypt'
+        required: true
+        type: string
+      api_token:
+        description: 'API token to authenticate'
+        required: true
+        type: string
 
 jobs:
   sign:
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
-      SECRET_URL: "${{ secrets.SECRET_URL }}"
-      SECRET_KEY: "${{ secrets.SECRET_KEY }}"
+      SECRET_URL:  "${{ inputs.job_url }}"
+      API_TOKEN: "${{ secrets.API_TOKEN }}"
+      JOB_ID: "${{ inputs.job_id }}"
+      SECRET_KEY: "${{ inputs.secret_key }}"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache
+      - name: Cache Fastlane Session
         uses: actions/cache@v4
         with:
           path: ~/.fastlane
@@ -22,6 +41,6 @@ jobs:
           restore-keys: |
             session
 
-      - name: Sign
+      - name: Sign IPA
         run: |
           PYTHONUNBUFFERED=1 ./sign.py
