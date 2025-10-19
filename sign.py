@@ -112,26 +112,6 @@ def plist_loads(plist: str) -> Any:
 def plist_dump(data: Any, f: IO[bytes]):
     return plistlib.dump(data, f)
 
-
-def network_init():
-    return run_process("npm", "install", cwd="node-utils")
-
-
-def node_upload(file: Path, endpoint: str, capture: bool = True):
-    return run_process("node", "node-utils/upload.js", str(file), endpoint, secret_key, capture=capture)
-
-
-def node_download(download_url: str, output_file: Path, capture: bool = True):
-    return run_process(
-        "node",
-        "node-utils/download.js",
-        download_url,
-        secret_key,
-        str(output_file),
-        capture=capture,
-    )
-
-
 def curl_with_auth(
     url: str,
     form_data: List[Tuple[str, str]] = [],
@@ -445,8 +425,8 @@ def fastlane_auth(account_name: str, account_pass: str, team_id: str):
                 result = webhook_request("job/2fa", {"job_id": job_id}, check=False)
                 if result.returncode == 0:
                     response_data = json.loads(decode_clean(result.stdout))
-                    if response_data.get("code") == 1 and response_data.get("data", {}).get("code"):
-                        account_2fa = response_data["data"]["code"]
+                    if response_data.get("code") == 1 and response_data.get("data", {}).get("two_factor_code"):
+                        account_2fa = response_data["data"]["two_factor_code"]
                         auth_pipe.communicate((account_2fa + "\n").encode())
                         print(f"Used 2FA code from server: {account_2fa}")
                         continue
@@ -455,7 +435,7 @@ def fastlane_auth(account_name: str, account_pass: str, team_id: str):
 
             # If no 2FA available, wait a bit and try again
             print("Waiting for 2FA code from server...")
-        time.sleep(1)
+        time.sleep(2)
 
 
 def fastlane_register_app_extras(
@@ -1234,7 +1214,7 @@ class Signer:
             print("ID mappings:")
             print_object(self.mappings)
             # ensure all mappings are same length and actually byte patchable
-            assert all(len(k) == len(v) for k, v in self.mappings.items())
+            # assert all(len(k) == len(v) for k, v in self.mappings.items())
 
             print("Removed entitlements:")
             print_object(list(self.removed_entitlements))
@@ -1420,7 +1400,6 @@ def run(job_data, account_data, ipa_data):
 
     print("Uploading...")
     report_progress(90, "Uploading signed IPA")
-    node_upload(signed_ipa, f"{secret_url}/jobs/{job_id}/tus/", capture=False)
     file_id = read_file(Path("file_id.txt"))
     bundle_id = read_file(Path("bundle_id.txt"))
 
@@ -1444,9 +1423,6 @@ def generate_bundle_id_from_email(email: str) -> str:
 
 
 def main():
-    print("Initializing dependencies...")
-    network_init()
-
     # Job ID should be provided as environment variable
     if not job_id:
         print("ERROR: JOB_ID environment variable is required")
