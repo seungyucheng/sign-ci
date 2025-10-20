@@ -30,15 +30,8 @@ def decrypt_aes_cbc_pkcs7(encrypted_data, key_string):
             from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
             from cryptography.hazmat.backends import default_backend
             from cryptography.hazmat.primitives import padding
-            use_cryptography = True
         except ImportError:
-            # Fallback to pycryptodome
-            try:
-                from Crypto.Cipher import AES
-                from Crypto.Util import Padding
-                use_cryptography = False
-            except ImportError:
-                raise Exception("Neither 'cryptography' nor 'pycryptodome' library is installed. Please install one of them with: pip install cryptography")
+            raise Exception("'cryptography' library is not installed. Please install it with: pip install cryptography")
 
         # Step 1: Convert the key from string to bytes (matching Go code)
         # The Go code uses the key directly as bytes, and first 16 bytes as IV
@@ -67,22 +60,14 @@ def decrypt_aes_cbc_pkcs7(encrypted_data, key_string):
             ciphertext = encrypted_data
 
         # Step 3 & 4: Decrypt using the available library
-        if use_cryptography:
             # Using cryptography library
-            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-            decryptor = cipher.decryptor()
-            decrypted_padded_content = decryptor.update(ciphertext) + decryptor.finalize()
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+        decryptor = cipher.decryptor()
+        decrypted_padded_content = decryptor.update(ciphertext) + decryptor.finalize()
 
-            # Step 5: Remove the padding
-            unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-            plaintext_bytes = unpadder.update(decrypted_padded_content) + unpadder.finalize()
-        else:
-            # Using pycryptodome library
-            cipher = AES.new(key, AES.MODE_CBC, iv)
-            decrypted_padded_content = cipher.decrypt(ciphertext)
-
-            # Step 5: Remove the padding
-            plaintext_bytes = Padding.unpad(decrypted_padded_content, AES.block_size, 'pkcs7')
+        # Step 5: Remove the padding
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        plaintext_bytes = unpadder.update(decrypted_padded_content) + unpadder.finalize()
 
         # Step 6: Convert the result back to readable text
         # This converts the unlocked message back to readable text
