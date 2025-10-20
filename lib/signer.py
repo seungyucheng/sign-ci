@@ -41,6 +41,8 @@ class SignOpts(NamedTuple):
     encode_ids: bool
     patch_ids: bool
     force_original_id: bool
+    account_id: Optional[str] = None
+    use_master_capabilities: bool = True
 
 
 class RemapDef(NamedTuple):
@@ -115,6 +117,13 @@ class Signer:
                 print(f"Removing {watch_name} directory")
                 shutil.rmtree(watch_dir)
 
+        # Analyze IPA capabilities and components
+        self.app_analysis = self._analyze_app_capabilities()
+        
+        # Create comprehensive bundle ID mappings
+        if opts.encode_ids and opts.account_id:
+            self._create_comprehensive_bundle_mappings()
+        
         # Identify all components to be signed (depth-first order)
         component_exts = ["*.app", "*.appex", "*.framework", "*.dylib", "PlugIns/*.bundle"]
         self.components = [item for e in component_exts for item in safe_glob(main_app, "**/" + e)][::-1]
@@ -122,7 +131,7 @@ class Signer:
 
     def _determine_main_bundle_id(self):
         """Determine the main bundle ID based on configuration."""
-        from .utils import generate_bundle_id_from_email
+        from .utils import generate_bundle_id_from_email, get_or_create_bundle_id
         
         if self.opts.prov_file:
             if self.opts.bundle_id is None:
@@ -143,13 +152,55 @@ class Signer:
                 print("Using custom bundle id")
                 self.main_bundle_id = self.opts.bundle_id
             elif self.opts.encode_ids:
-                print("Using encoded original bundle id")
-                self.main_bundle_id = generate_bundle_id_from_email(self.opts.account_name)
+                print("Using managed bundle ID system")
+                # Use new bundle ID management system
+                account_id = getattr(self.opts, 'account_id', None)
+                if account_id:
+                    self.main_bundle_id = get_or_create_bundle_id(
+                        account_id, self.old_main_bundle_id, self.opts.account_name
+                    )
+                else:
+                    # Fallback to old system
+                    self.main_bundle_id = generate_bundle_id_from_email(self.opts.account_name)
+                
                 if not self.opts.force_original_id and self.old_main_bundle_id != self.main_bundle_id:
                     self.mappings[self.old_main_bundle_id] = self.main_bundle_id
             else:
                 print("Using original bundle id")
                 self.main_bundle_id = self.old_main_bundle_id
+
+    def _analyze_app_capabilities(self):
+        """Analyze the app to detect capabilities and components."""
+        from .utils import analyze_ipa_capabilities
+        from .webhooks import store_app_capabilities
+        
+        print("Analyzing app capabilities and components...")
+        analysis = analyze_ipa_capabilities(self.opts.app_dir)
+        
+        # Store capabilities analysis on server if account_id is available
+        if self.opts.account_id and analysis.get("capabilities"):
+            store_app_capabilities(
+                self.opts.account_id,
+                analysis.get("main_app", {}).get("bundle_id", ""),
+                analysis.get("capabilities", []),
+                analysis.get("entitlements", {})
+            )
+        
+        print(f"Detected {len(analysis.get('capabilities', []))} capabilities and {len(analysis.get('extensions', []))} extensions")
+        return analysis
+    
+    def _create_comprehensive_bundle_mappings(self):
+        """Create bundle ID mappings for all app components."""
+        from .utils import create_bundle_id_mapping_for_components
+        
+        print("Creating comprehensive bundle ID mappings...")
+        component_mappings = create_bundle_id_mapping_for_components(
+            self.opts.account_id, self.opts.account_name, self.app_analysis
+        )
+        
+        # Merge with existing mappings
+        self.mappings.update(component_mappings)
+        print(f"Created {len(component_mappings)} bundle ID mappings")
 
     def gen_id(self, input_id: str):
         """Encode the provided id into a different but constant id."""
@@ -157,6 +208,12 @@ class Signer:
             return input_id
         if not self.opts.encode_ids:
             return input_id
+        
+        # Check if we have a mapping from the comprehensive system
+        if input_id in self.mappings:
+            return self.mappings[input_id]
+            
+        # Fallback to original random generation
         new_parts = map(lambda x: rand_str(len(x), x + self.opts.team_id), input_id.split("."))
         result = ".".join(new_parts)
         return result
@@ -232,9 +289,18 @@ class Signer:
             shutil.copy2(self.opts.prov_file, embedded_prov)
         else:
             print("Registering component with Apple...")
-            fastlane_register_app(
-                self.opts.account_name, self.opts.account_pass, self.opts.team_id, data.bundle_id, data.entitlements
-            )
+            if self.opts.use_master_capabilities:
+                from .fastlane_integration import fastlane_register_app_with_master_capabilities
+                # Get required capabilities from analysis
+                required_capabilities = self.app_analysis.get("capabilities", [])
+                fastlane_register_app_with_master_capabilities(
+                    self.opts.account_name, self.opts.account_pass, self.opts.team_id, 
+                    data.bundle_id, required_capabilities
+                )
+            else:
+                fastlane_register_app(
+                    self.opts.account_name, self.opts.account_pass, self.opts.team_id, data.bundle_id, data.entitlements
+                )
 
             print("Generating provisioning profile...")
             prov_type = "adhoc" if self.is_distribution else "development"

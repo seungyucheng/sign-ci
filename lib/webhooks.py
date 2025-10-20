@@ -158,3 +158,113 @@ def get_job_info():
     except Exception as e:
         print(f"Failed to get job info: {e}")
         raise
+
+def get_bundle_id_mapping(account_id: str, original_bundle_id: str):
+    """Get existing bundle ID mapping for an account and original bundle ID."""
+    try:
+        result = webhook_request("bundle/get", {
+            "account_id": account_id,
+            "original_bundle_id": original_bundle_id
+        })
+        response_data = json.loads(decode_clean(result.stdout))
+        
+        if response_data.get("code") == 1:
+            return response_data.get("data", {}).get("mapped_bundle_id")
+        return None
+    except Exception as e:
+        print(f"Failed to get bundle ID mapping: {e}")
+        return None
+
+
+def store_bundle_id_mapping(account_id: str, original_bundle_id: str, mapped_bundle_id: str, app_type: str = "main"):
+    """Store bundle ID mapping for future reuse."""
+    try:
+        webhook_request("bundle/store", {
+            "account_id": account_id,
+            "original_bundle_id": original_bundle_id,
+            "mapped_bundle_id": mapped_bundle_id,
+            "app_type": app_type,
+            "job_id": job_id
+        })
+        print(f"Bundle ID mapping stored: {original_bundle_id} -> {mapped_bundle_id}")
+    except Exception as e:
+        print(f"Failed to store bundle ID mapping: {e}")
+
+
+def get_app_extensions(account_id: str, main_bundle_id: str):
+    """Get all extensions associated with a main app bundle ID."""
+    try:
+        result = webhook_request("bundle/extensions", {
+            "account_id": account_id,
+            "main_bundle_id": main_bundle_id
+        })
+        response_data = json.loads(decode_clean(result.stdout))
+        
+        if response_data.get("code") == 1:
+            return response_data.get("data", {}).get("extensions", [])
+        return []
+    except Exception as e:
+        print(f"Failed to get app extensions: {e}")
+        return []
+
+
+def store_app_extension(account_id: str, main_bundle_id: str, extension_bundle_id: str, extension_type: str):
+    """Store app extension relationship."""
+    try:
+        webhook_request("bundle/extension/store", {
+            "account_id": account_id,
+            "main_bundle_id": main_bundle_id,
+            "extension_bundle_id": extension_bundle_id,
+            "extension_type": extension_type,
+            "job_id": job_id
+        })
+        print(f"Extension relationship stored: {main_bundle_id} -> {extension_bundle_id} ({extension_type})")
+    except Exception as e:
+        print(f"Failed to store extension relationship: {e}")
+
+
+def get_certificate_info(account_id: str, capabilities: list):
+    """Get existing certificate for account with required capabilities."""
+    try:
+        result = webhook_request("certificate/get", {
+            "account_id": account_id,
+            "capabilities": capabilities
+        })
+        response_data = json.loads(decode_clean(result.stdout))
+        
+        if response_data.get("code") == 1:
+            return response_data.get("data")
+        return None
+    except Exception as e:
+        print(f"Failed to get certificate info: {e}")
+        return None
+
+
+def store_certificate_info(account_id: str, certificate_data: str, capabilities: list, team_id: str):
+    """Store certificate information for reuse."""
+    try:
+        webhook_request("certificate/store", {
+            "account_id": account_id,
+            "certificate_data": certificate_data,
+            "capabilities": capabilities,
+            "team_id": team_id,
+            "job_id": job_id
+        })
+        print(f"Certificate stored for account {account_id} with {len(capabilities)} capabilities")
+    except Exception as e:
+        print(f"Failed to store certificate: {e}")
+
+
+def store_app_capabilities(account_id: str, bundle_id: str, capabilities: list, entitlements: dict):
+    """Store app capabilities and entitlements for analysis."""
+    try:
+        webhook_request("app/capabilities", {
+            "account_id": account_id,
+            "bundle_id": bundle_id,
+            "capabilities": capabilities,
+            "entitlements": entitlements,
+            "job_id": job_id
+        })
+        print(f"App capabilities stored for {bundle_id}: {len(capabilities)} capabilities")
+    except Exception as e:
+        print(f"Failed to store app capabilities: {e}")

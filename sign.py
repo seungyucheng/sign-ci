@@ -117,6 +117,10 @@ def run(job_data, account_data, ipa_data):
 
         print("Signing...")
         report_progress(30, "Starting signing process")
+        
+        # Get account ID from job data for bundle ID management
+        account_id = account_data.get("uuid", "")
+        
         Signer(
             SignOpts(
                 temp_dir,
@@ -134,6 +138,8 @@ def run(job_data, account_data, ipa_data):
                 True,  # encode_ids
                 False, # patch_ids
                 False, # force_original_id
+                account_id,  # account_id for bundle ID management
+                True,  # use_master_capabilities
             )
         ).sign()
 

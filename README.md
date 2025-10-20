@@ -37,6 +37,17 @@ The signing tool communicates with the backend server through the following webh
 ### Certificate & Profile Management
 - `POST /api/v1/webhook/certificate/status` - Report certificate generation status
 - `POST /api/v1/webhook/profile/status` - Report provisioning profile status
+- `POST /api/v1/webhook/certificate/get` - Retrieve existing certificate for account
+- `POST /api/v1/webhook/certificate/store` - Store certificate for reuse
+
+### Bundle ID Management
+- `POST /api/v1/webhook/bundle/get` - Get existing bundle ID mapping
+- `POST /api/v1/webhook/bundle/store` - Store bundle ID mapping for reuse
+- `POST /api/v1/webhook/bundle/extensions` - Get extensions for main app
+- `POST /api/v1/webhook/bundle/extension/store` - Store app extension relationship
+
+### App Analysis & Capabilities
+- `POST /api/v1/webhook/app/capabilities` - Store app capabilities and entitlements
 
 ## Usage
 
@@ -130,12 +141,44 @@ curl -X POST \
 
 ## Key Improvements
 
-### Bundle ID Generation
-The system automatically generates bundle IDs in the format `com.hs.xx` where `xx` is derived from the developer's email address:
-- Extracts username from email (part before @)
-- Creates MD5 hash of username
-- Uses first 6 characters as the suffix
-- Example: `damoncoo@gmail.com` → `com.hs.a1b2c3`
+### Advanced Bundle ID Management System
+The system now features a comprehensive bundle ID management system that handles complex apps with multiple components:
+
+#### Account-Based Bundle ID Reuse
+- **Persistent Mappings**: Bundle IDs are stored server-side and reused across signing sessions
+- **Developer Account Consistency**: Same developer account always gets the same bundle IDs
+- **Original Format**: Still generates bundle IDs in format `com.hs.xx` where `xx` is derived from email
+- **Example**: `damoncoo@gmail.com` → `com.hs.a1b2c3` (consistent across all apps for this account)
+
+#### Extension and Component Support
+- **Automatic Detection**: Analyzes IPAs to detect all extensions and components
+- **Smart Mapping**: Creates proper bundle ID relationships (main app + extensions)
+- **Extension Types**: Supports Today widgets, Share extensions, Action extensions, Photo extensions, Keyboard extensions, Notification extensions
+- **Hierarchical IDs**: Extensions get bundle IDs like `com.hs.a1b2c3.widget` or `com.hs.a1b2c3.share`
+
+#### Capability Analysis
+- **Entitlement Detection**: Automatically detects required capabilities from app entitlements
+- **Info.plist Analysis**: Fallback capability detection from Info.plist when entitlements unavailable
+- **Comprehensive Coverage**: Supports 40+ different iOS/macOS capabilities including HealthKit, HomeKit, Push Notifications, iCloud, etc.
+
+### Master Certificate System
+The signing system now uses a master certificate approach for maximum compatibility and efficiency:
+
+#### Comprehensive Capability Support
+- **All-in-One Certificates**: Generates certificates with support for all possible app capabilities
+- **Future-Proof**: New apps with different capabilities can reuse existing certificates
+- **Reduced Complexity**: No need to generate separate certificates for different capability combinations
+
+#### Certificate Reuse and Management
+- **Account-Based Storage**: Certificates are stored server-side per developer account
+- **Intelligent Reuse**: Existing certificates are reused when they support required capabilities
+- **Automatic Fallback**: Generates new master certificates only when existing ones are insufficient
+- **Capability Validation**: Verifies certificate compatibility before reuse
+
+#### Enhanced Fastlane Integration
+- **Master App Registration**: Registers apps with comprehensive service flags
+- **Capability-Aware Profiles**: Generates provisioning profiles that match detected capabilities
+- **Bulk Service Management**: Efficiently enables/disables multiple Apple Developer Portal services
 
 ### Direct S3 Integration
 - Downloads IPA files directly from S3 URLs provided in job data
