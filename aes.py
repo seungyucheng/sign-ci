@@ -1,5 +1,4 @@
 import base64
-import hashlib
 
 def decrypt_aes_cbc_pkcs7(encrypted_data, key_string):
     """

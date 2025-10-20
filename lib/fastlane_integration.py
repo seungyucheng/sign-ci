@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""
+Fastlane integration functions.
+
+This module handles all interactions with Fastlane for app registration,
+provisioning profile generation, and Apple Developer Portal operations.
+"""
+
+import os
+import time
+import json
+import subprocess
+from pathlib import Path
+from typing import Dict, Any, List, Set, Tuple
+from multiprocessing.pool import ThreadPool
+from .utils import run_process, clean_dev_portal_name, decode_clean
+from .webhooks import webhook_request, job_id
+
+
+def fastlane_auth(account_name: str, account_pass: str, team_id: str):
+    """Authenticate with Apple Developer Portal using Fastlane."""
+    my_env = os.environ.copy()
+    my_env["FASTLANE_USER"] = account_name
+    my_env["FASTLANE_PASSWORD"] = account_pass
+    my_env["FASTLANE_TEAM_ID"] = team_id
+
+    auth_pipe = subprocess.Popen(
+        # enable copy to clipboard so we're not interactively prompted
+        ["fastlane", "spaceauth", "--copy_to_clipboard"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=my_env,
+    )
+
+    start_time = time.time()
+    while True:
+        if time.time() - start_time > 60:
+            raise Exception("Operation timed out")
+        else:
+            result = auth_pipe.poll()
+            if result == 0:
+                print("Logged in!")
+                break
+            elif result is not None:
+                stdout, stderr = auth_pipe.communicate()
+                result = {"error_code": result, "stdout": stdout, "stderr": stderr}
+                raise Exception(f"Error logging in: {result}")
+
+            # Try to get 2FA code from server
+            try:
+                result = webhook_request("job/2fa", {"job_id": job_id}, check=False)
+                if result.returncode == 0:
+                    response_data = json.loads(decode_clean(result.stdout))
+                    if response_data.get("code") == 1 and response_data.get("data", {}).get("two_factor_code"):
+                        account_2fa = response_data["data"]["two_factor_code"]
+                        auth_pipe.communicate((account_2fa + "\n").encode())
+                        print(f"Used 2FA code from server: {account_2fa}")
+                        continue
+            except Exception as e:
+                print(f"Failed to get 2FA from server: {e}")
+
+            # If no 2FA available, wait a bit and try again
+            print("Waiting for 2FA code from server...")
+        time.sleep(2)
+
+
+def fastlane_register_app_extras(
+    my_env: Dict[Any, Any],
+    bundle_id: str,
+    extra_type: str,
+    extra_prefix: str,
+    matchable_entitlements: List[str],
+    entitlements: Dict[Any, Any],
+):
+    """Register app extras (groups, iCloud containers) with Apple Developer Portal."""
+    from .utils import run_process_async, popen_check
+    
+    matched_ids: Set[str] = set()
+    for k, v in entitlements.items():
+        if k in matchable_entitlements:
+            if type(v) is list:
+                matched_ids.update(v)
+            elif type(v) is str:
+                matched_ids.add(v)
+            else:
+                raise Exception(f"Unknown value type for {v}: {type(v)}")
+
+    # ensure all ids are prefixed correctly or registration will fail
+    # some matchable entitlements are incorrectly prefixed with team id
+    matched_ids = set(
+        id if id.startswith(extra_prefix) else extra_prefix + id[id.index(".") + 1 :] for id in matched_ids
+    )
+
+    jobs: List[subprocess.Popen] = []
+
+    for id in matched_ids:
+        jobs.append(
+            run_process_async(
+                "fastlane",
+                "produce",
+                extra_type,
+                "--skip_itc",
+                "-g",
+                id,
+                "-n",
+                clean_dev_portal_name(f"ST {id}"),
+                env=my_env,
+            )
+        )
+
+    for pipe in jobs:
+        if pipe.poll() is None:
+            pipe.wait()
+        popen_check(pipe)
+
+    run_process(
+        "fastlane",
+        "produce",
+        f"associate_{extra_type}",
+        "--skip_itc",
+        "--app_identifier",
+        bundle_id,
+        *matched_ids,
+        env=my_env,
+    )
+
+
+def fastlane_register_app(
+    account_name: str, account_pass: str, team_id: str, bundle_id: str, entitlements: Dict[Any, Any]
+):
+    """Register app with Apple Developer Portal and configure services."""
+    from .webhooks import report_certificate_status
+    
+    my_env = os.environ.copy()
+    my_env["FASTLANE_USER"] = account_name
+    my_env["FASTLANE_PASSWORD"] = account_pass
+    my_env["FASTLANE_TEAM_ID"] = team_id
+
+    report_certificate_status("in_progress", f"Registering app {bundle_id}")
+
+    # no-op if already exists
+    run_process(
+        "fastlane",
+        "produce",
+        "create",
+        "--skip_itc",
+        "--app_identifier",
+        bundle_id,
+        "--app-name",
+        clean_dev_portal_name(f"ST {bundle_id}"),
+        env=my_env,
+    )
+
+    supported_services = [
+        "--push-notification",
+        "--health-kit",
+        "--home-kit",
+        "--wireless-accessory",
+        "--inter-app-audio",
+        "--extended-virtual-address-space",
+        "--multipath",
+        "--network-extension",
+        "--personal-vpn",
+        "--access-wifi",
+        "--nfc-tag-reading",
+        "--siri-kit",
+        "--associated-domains",
+        "--icloud",
+        "--app-group",
+    ]
+
+    # clear any previous services
+    run_process(
+        "fastlane",
+        "produce",
+        "disable_services",
+        "--skip_itc",
+        "--app_identifier",
+        bundle_id,
+        *supported_services,
+        env=my_env,
+    )
+
+    icloud_entitlements = [
+        "com.apple.developer.icloud-container-development-container-identifiers",
+        "com.apple.developer.icloud-container-identifiers",
+        "com.apple.developer.ubiquity-container-identifiers",
+        "com.apple.developer.ubiquity-kvstore-identifier",
+    ]
+
+    group_entitlements = ["com.apple.security.application-groups"]
+
+    entitlement_map: Dict[str, Tuple[str, ...]] = {
+        "aps-environment": tuple(["--push-notification"]),  # iOS
+        "com.apple.developer.aps-environment": tuple(["--push-notification"]),  # macOS
+        "com.apple.developer.healthkit": tuple(["--health-kit"]),
+        "com.apple.developer.homekit": tuple(["--home-kit"]),
+        "com.apple.external-accessory.wireless-configuration": tuple(["--wireless-accessory"]),
+        "inter-app-audio": tuple(["--inter-app-audio"]),
+        "com.apple.developer.kernel.extended-virtual-addressing": tuple(["--extended-virtual-address-space"]),
+        "com.apple.developer.networking.multipath": tuple(["--multipath"]),
+        "com.apple.developer.networking.networkextension": tuple(["--network-extension"]),
+        "com.apple.developer.networking.vpn.api": tuple(["--personal-vpn"]),
+        "com.apple.developer.networking.wifi-info": tuple(["--access-wifi"]),
+        "com.apple.developer.nfc.readersession.formats": tuple(["--nfc-tag-reading"]),
+        "com.apple.developer.siri": tuple(["--siri-kit"]),
+        "com.apple.developer.associated-domains": tuple(["--associated-domains"]),
+    }
+    for k in icloud_entitlements:
+        entitlement_map[k] = tuple(["--icloud", "xcode6_compatible"])
+    for k in group_entitlements:
+        entitlement_map[k] = tuple(["--app-group"])
+
+    service_flags = set(entitlement_map[f] for f in entitlements.keys() if f in entitlement_map)
+    service_flags = [item for sublist in service_flags for item in sublist]
+
+    print("Enabling services:", service_flags)
+
+    run_process(
+        "fastlane",
+        "produce",
+        "enable_services",
+        "--skip_itc",
+        "--app_identifier",
+        bundle_id,
+        *service_flags,
+        env=my_env,
+    )
+
+    app_extras = [("cloud_container", "iCloud.", icloud_entitlements), ("group", "group.", group_entitlements)]
+    with ThreadPool(len(app_extras)) as p:
+        p.starmap(
+            lambda extra_type, extra_prefix, matchable_entitlements: fastlane_register_app_extras(
+                my_env, bundle_id, extra_type, extra_prefix, matchable_entitlements, entitlements
+            ),
+            app_extras,
+        )
+
+
+def fastlane_get_prov_profile(
+    account_name: str, account_pass: str, team_id: str, bundle_id: str, prov_type: str, platform: str, out_file: Path
+):
+    """Generate provisioning profile using Fastlane."""
+    import tempfile
+    import shutil
+    from .webhooks import report_profile_status
+    
+    my_env = os.environ.copy()
+    my_env["FASTLANE_USER"] = account_name
+    my_env["FASTLANE_PASSWORD"] = account_pass
+    my_env["FASTLANE_TEAM_ID"] = team_id
+
+    report_profile_status("in_progress", f"Generating provisioning profile for {bundle_id}")
+
+    with tempfile.TemporaryDirectory() as tmpdir_str:
+        run_process(
+            "fastlane",
+            "sigh",
+            "renew",
+            "--app_identifier",
+            bundle_id,
+            "--provisioning_name",
+            clean_dev_portal_name(f"ST {bundle_id} {prov_type}"),
+            "--force",
+            "--skip_install",
+            "--include_mac_in_profiles",
+            "--platform",
+            platform,
+            "--" + prov_type,
+            "--output_path",
+            tmpdir_str,
+            "--filename",
+            "prov.mobileprovision",
+            env=my_env,
+        )
+        shutil.copy2(Path(tmpdir_str).joinpath("prov.mobileprovision"), out_file)
+
+    report_profile_status("completed", f"Provisioning profile generated for {bundle_id}")
