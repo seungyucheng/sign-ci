@@ -16,7 +16,8 @@ This library provides a modular approach to iOS app signing, breaking down the c
 - `run_process()` - Execute commands with proper error handling
 - `extract_zip()`, `archive_zip()` - Handle ZIP archives
 - `plist_load()`, `plist_dump()` - Work with property list files
-- `generate_bundle_id_from_email()` - Create unique app identifiers
+- `get_app_type()` - Detect app platform (iOS, watchOS, tvOS, macOS, Mac Catalyst)
+- `get_or_create_bundle_id()` - Create unique app identifiers
 
 ### `security.py` - Security & Keychain Management
 **What it does:** Handles all security-related operations

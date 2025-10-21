@@ -17,12 +17,11 @@ from typing import Dict, List, NamedTuple, Set, Tuple, Any, Optional
 
 from .utils import (
     safe_glob, plist_load, plist_dump, print_object, 
-    get_info_plist_path, get_main_app_path, rand_str, binary_replace
+    get_info_plist_path, get_main_app_path, rand_str, binary_replace, get_app_type
 )
 from .security import codesign_async, codesign_dump_entitlements, dump_prov_entitlements
-from .fastlane_integration import fastlane_auth, fastlane_register_app, fastlane_get_prov_profile
+from .fastlane_integration import fastlane_auth, fastlane_register_app, fastlane_get_prov_profile, fastlane_get_certificate, fastlane_get_provisioning_profile
 from .webhooks import report_progress
-
 
 class SignOpts(NamedTuple):
     """Configuration options for the signing process."""
@@ -41,9 +40,9 @@ class SignOpts(NamedTuple):
     encode_ids: bool
     patch_ids: bool
     force_original_id: bool
-    account_id: Optional[str] = None
-    use_master_capabilities: bool = True
-
+    account_id: str
+    job_id: Optional[str] = None
+    device_udid: str 
 
 class RemapDef(NamedTuple):
     """Definition for remapping entitlement identifiers."""
@@ -73,6 +72,8 @@ class Signer:
         self.old_main_bundle_id = main_info["CFBundleIdentifier"]
         self.is_distribution = "Distribution" in opts.common_name
         self.is_mac_app = main_info_plist.parent.name == "Contents"
+        self.app_type = get_app_type(opts.app_dir)
+        print(f"App type: {self.app_type}")
 
         if self.is_distribution and self.is_mac_app:
             raise Exception(
@@ -116,13 +117,6 @@ class Signer:
             if watch_dir.exists():
                 print(f"Removing {watch_name} directory")
                 shutil.rmtree(watch_dir)
-
-        # Analyze IPA capabilities and components
-        self.app_analysis = self._analyze_app_capabilities()
-        
-        # Create comprehensive bundle ID mappings
-        if opts.encode_ids and opts.account_id:
-            self._create_comprehensive_bundle_mappings()
         
         # Identify all components to be signed (depth-first order)
         component_exts = ["*.app", "*.appex", "*.framework", "*.dylib", "PlugIns/*.bundle"]
@@ -131,7 +125,7 @@ class Signer:
 
     def _determine_main_bundle_id(self):
         """Determine the main bundle ID based on configuration."""
-        from .utils import generate_bundle_id_from_email, get_or_create_bundle_id
+        from .utils import  get_or_create_bundle_id
         
         if self.opts.prov_file:
             if self.opts.bundle_id is None:
@@ -154,53 +148,14 @@ class Signer:
             elif self.opts.encode_ids:
                 print("Using managed bundle ID system")
                 # Use new bundle ID management system
-                account_id = getattr(self.opts, 'account_id', None)
-                if account_id:
-                    self.main_bundle_id = get_or_create_bundle_id(
-                        account_id, self.old_main_bundle_id, self.opts.account_name
-                    )
-                else:
-                    # Fallback to old system
-                    self.main_bundle_id = generate_bundle_id_from_email(self.opts.account_name)
-                
+                self.main_bundle_id = get_or_create_bundle_id(
+                    self.opts.job_id, self.app_type if self.app_type else "ios"
+                )
                 if not self.opts.force_original_id and self.old_main_bundle_id != self.main_bundle_id:
                     self.mappings[self.old_main_bundle_id] = self.main_bundle_id
             else:
                 print("Using original bundle id")
                 self.main_bundle_id = self.old_main_bundle_id
-
-    def _analyze_app_capabilities(self):
-        """Analyze the app to detect capabilities and components."""
-        from .utils import analyze_ipa_capabilities
-        from .webhooks import store_app_capabilities
-        
-        print("Analyzing app capabilities and components...")
-        analysis = analyze_ipa_capabilities(self.opts.app_dir)
-        
-        # Store capabilities analysis on server if account_id is available
-        if self.opts.account_id and analysis.get("capabilities"):
-            store_app_capabilities(
-                self.opts.account_id,
-                analysis.get("main_app", {}).get("bundle_id", ""),
-                analysis.get("capabilities", []),
-                analysis.get("entitlements", {})
-            )
-        
-        print(f"Detected {len(analysis.get('capabilities', []))} capabilities and {len(analysis.get('extensions', []))} extensions")
-        return analysis
-    
-    def _create_comprehensive_bundle_mappings(self):
-        """Create bundle ID mappings for all app components."""
-        from .utils import create_bundle_id_mapping_for_components
-        
-        print("Creating comprehensive bundle ID mappings...")
-        component_mappings = create_bundle_id_mapping_for_components(
-            self.opts.account_id, self.opts.account_name, self.app_analysis
-        )
-        
-        # Merge with existing mappings
-        self.mappings.update(component_mappings)
-        print(f"Created {len(component_mappings)} bundle ID mappings")
 
     def gen_id(self, input_id: str):
         """Encode the provided id into a different but constant id."""
@@ -289,18 +244,9 @@ class Signer:
             shutil.copy2(self.opts.prov_file, embedded_prov)
         else:
             print("Registering component with Apple...")
-            if self.opts.use_master_capabilities:
-                from .fastlane_integration import fastlane_register_app_with_master_capabilities
-                # Get required capabilities from analysis
-                required_capabilities = self.app_analysis.get("capabilities", [])
-                fastlane_register_app_with_master_capabilities(
-                    self.opts.account_name, self.opts.account_pass, self.opts.team_id, 
-                    data.bundle_id, required_capabilities
-                )
-            else:
-                fastlane_register_app(
-                    self.opts.account_name, self.opts.account_pass, self.opts.team_id, data.bundle_id, data.entitlements
-                )
+            fastlane_register_app(
+                self.opts.account_name, self.opts.account_pass, self.opts.team_id, data.bundle_id, data.entitlements
+            )
 
             print("Generating provisioning profile...")
             prov_type = "adhoc" if self.is_distribution else "development"
@@ -547,15 +493,29 @@ class Signer:
             print("Removed entitlements:")
             print_object(list(self.removed_entitlements))
 
-            # Authenticate if needed
-            if self.opts.prov_file is None:
-                print(
-                    "Logging in...",
-                    "If you receive a two-factor authentication (2FA) code, please submit it to the web service.",
-                    sep="\n",
-                )
-                report_progress(40, "Authenticating with Apple Developer Portal")
-                fastlane_auth(self.opts.account_name, self.opts.account_pass, self.opts.team_id)
+            # Authenticate if needed (must be done before certificate/profile generation)
+            print(
+                "Logging in...",
+                "If you receive a two-factor authentication (2FA) code, please submit it to the web service.",
+                sep="\n",
+            )
+            report_progress(40, "Authenticating with Apple Developer Portal")
+            fastlane_auth(self.opts.account_name, self.opts.account_pass, self.opts.team_id)
+
+            # Generate or retrieve certificate from server
+            print("Generating or retrieving certificate...")
+            cert_type = "distribution" if self.is_distribution else "development"
+            certificate_path = fastlane_get_certificate(
+                self.opts.account_name,
+                self.opts.account_pass,
+                self.opts.team_id,
+                self.opts.account_id,
+                cert_type
+            )
+            if certificate_path:
+                print(f"Certificate ready at: {certificate_path}")
+            else:
+                raise Exception("Failed to generate certificate")
 
             # Sign all components
             jobs: Dict[Path, subprocess.Popen] = {}

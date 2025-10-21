@@ -33,10 +33,10 @@ Example usage:
 # Import main classes and functions for easy access
 from .signer import Signer, SignOpts, ComponentData, RemapDef
 from .webhooks import (
-    report_progress, report_certificate_status, report_profile_status,
+    report_progress,
     complete_job, fail_job, get_job_info
 )
-from .utils import generate_bundle_id_from_email, rand_str, read_file
+from .utils import rand_str, read_file
 from .security import security_import, security_remove_keychain
 from .tweak_injection import inject_tweaks
 

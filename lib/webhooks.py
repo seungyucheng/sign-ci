@@ -83,38 +83,51 @@ def report_progress(progress: int, message: str = "", state: int = 1):
         print(f"Failed to report progress: {e}")
 
 
-def report_certificate_status(status: str, message: str = "", cert_data: Optional[str] = None):
-    """Report certificate generation status to server."""
+def get_certificate_from_server(account_id: str) -> Optional[Dict[str, Any]]:
+    """Get existing certificate from server."""
     try:
-        data = {
-            "job_id": job_id,
-            "status": status,
-            "message": message
-        }
-        if cert_data:
-            data["certificate_data"] = cert_data
-
-        webhook_request("certificate/status", data)
-        print(f"Certificate status reported: {status} - {message}")
+        result = webhook_request("certificate/get", {
+            "account_id": account_id
+        })
+        response_data = json.loads(decode_clean(result.stdout))
+        
+        if response_data.get("code") == 1:
+            print("Certificate found on server")
+            return response_data.get("data")
+        return None
     except Exception as e:
-        print(f"Failed to report certificate status: {e}")
+        print(f"Failed to get certificate from server: {e}")
+        return None
 
 
-def report_profile_status(status: str, message: str = "", profile_data: Optional[str] = None):
-    """Report provisioning profile generation status to server."""
+def upload_certificate(account_id: str, team_id: str, certificate_data: str):
+    """Upload certificate to server."""
     try:
-        data = {
-            "job_id": job_id,
-            "status": status,
-            "message": message
-        }
-        if profile_data:
-            data["profile_data"] = profile_data
-
-        webhook_request("profile/status", data)
-        print(f"Profile status reported: {status} - {message}")
+        webhook_request("certificate/store", {
+            "account_id": account_id,
+            "team_id": team_id,
+            "certificate_data": certificate_data
+        })
+        print(f"Certificate uploaded successfully for account {account_id}")
     except Exception as e:
-        print(f"Failed to report profile status: {e}")
+        print(f"Failed to upload certificate: {e}")
+        raise
+
+
+def upload_provisioning_profile(account_id: str, bundle_id: str, device_udid: str, profile_data: str, profile_id: str, expiry_date: str):
+    """Upload provisioning profile to server."""
+    try:
+        webhook_request("profile/store", {
+            "job_id": job_id,
+            "bundle_id": bundle_id,
+            "profile_data": profile_data,
+            "profile_id": profile_id,
+            "expiry_date": expiry_date
+        })
+        print(f"Provisioning profile uploaded successfully for bundle {bundle_id}")
+    except Exception as e:
+        print(f"Failed to upload provisioning profile: {e}")
+        raise
 
 
 def complete_job(output_path: str, file_size: int = 0):
@@ -159,12 +172,12 @@ def get_job_info():
         print(f"Failed to get job info: {e}")
         raise
 
-def get_bundle_id_mapping(account_id: str, original_bundle_id: str):
+def get_bundle_id_mapping(job_id: str, app_type: str):
     """Get existing bundle ID mapping for an account and original bundle ID."""
     try:
         result = webhook_request("bundle/get", {
-            "account_id": account_id,
-            "original_bundle_id": original_bundle_id
+            "job_id": job_id,
+            "app_type": app_type
         })
         response_data = json.loads(decode_clean(result.stdout))
         
@@ -174,53 +187,6 @@ def get_bundle_id_mapping(account_id: str, original_bundle_id: str):
     except Exception as e:
         print(f"Failed to get bundle ID mapping: {e}")
         return None
-
-
-def store_bundle_id_mapping(account_id: str, original_bundle_id: str, mapped_bundle_id: str, app_type: str = "main"):
-    """Store bundle ID mapping for future reuse."""
-    try:
-        webhook_request("bundle/store", {
-            "account_id": account_id,
-            "original_bundle_id": original_bundle_id,
-            "mapped_bundle_id": mapped_bundle_id,
-            "app_type": app_type,
-            "job_id": job_id
-        })
-        print(f"Bundle ID mapping stored: {original_bundle_id} -> {mapped_bundle_id}")
-    except Exception as e:
-        print(f"Failed to store bundle ID mapping: {e}")
-
-
-def get_app_extensions(account_id: str, main_bundle_id: str):
-    """Get all extensions associated with a main app bundle ID."""
-    try:
-        result = webhook_request("bundle/extensions", {
-            "account_id": account_id,
-            "main_bundle_id": main_bundle_id
-        })
-        response_data = json.loads(decode_clean(result.stdout))
-        
-        if response_data.get("code") == 1:
-            return response_data.get("data", {}).get("extensions", [])
-        return []
-    except Exception as e:
-        print(f"Failed to get app extensions: {e}")
-        return []
-
-
-def store_app_extension(account_id: str, main_bundle_id: str, extension_bundle_id: str, extension_type: str):
-    """Store app extension relationship."""
-    try:
-        webhook_request("bundle/extension/store", {
-            "account_id": account_id,
-            "main_bundle_id": main_bundle_id,
-            "extension_bundle_id": extension_bundle_id,
-            "extension_type": extension_type,
-            "job_id": job_id
-        })
-        print(f"Extension relationship stored: {main_bundle_id} -> {extension_bundle_id} ({extension_type})")
-    except Exception as e:
-        print(f"Failed to store extension relationship: {e}")
 
 
 def get_certificate_info(account_id: str, capabilities: list):

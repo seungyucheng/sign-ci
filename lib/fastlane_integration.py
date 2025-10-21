@@ -130,14 +130,12 @@ def fastlane_register_app(
     account_name: str, account_pass: str, team_id: str, bundle_id: str, entitlements: Dict[Any, Any]
 ):
     """Register app with Apple Developer Portal and configure services."""
-    from .webhooks import report_certificate_status
+    from .webhooks import report_job_progress
     
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
-
-    report_certificate_status("in_progress", f"Registering app {bundle_id}")
 
     # no-op if already exists
     run_process(
@@ -238,116 +236,20 @@ def fastlane_register_app(
         )
 
 
-def fastlane_register_app_with_master_capabilities(
-    account_name: str, account_pass: str, team_id: str, bundle_id: str, required_capabilities: List[str] = None
-):
-    """Register app with comprehensive master capabilities."""
-    from .webhooks import report_certificate_status
-    from .utils import get_master_capabilities_list
-    
-    my_env = os.environ.copy()
-    my_env["FASTLANE_USER"] = account_name
-    my_env["FASTLANE_PASSWORD"] = account_pass
-    my_env["FASTLANE_TEAM_ID"] = team_id
-
-    report_certificate_status("in_progress", f"Registering app {bundle_id} with master capabilities")
-
-    # Create app if it doesn't exist
-    run_process(
-        "fastlane",
-        "produce",
-        "create",
-        "--skip_itc",
-        "--app_identifier",
-        bundle_id,
-        "--app-name",
-        clean_dev_portal_name(f"ST {bundle_id}"),
-        env=my_env,
-    )
-
-    # Get comprehensive service flags for master certificate
-    master_services = get_master_service_flags(required_capabilities)
-    
-    # Clear any previous services first
-    all_services = [
-        "--push-notification",
-        "--health-kit",
-        "--home-kit", 
-        "--wireless-accessory",
-        "--inter-app-audio",
-        "--extended-virtual-address-space",
-        "--multipath",
-        "--network-extension",
-        "--personal-vpn",
-        "--access-wifi",
-        "--nfc-tag-reading",
-        "--siri-kit",
-        "--associated-domains",
-        "--icloud",
-        "--app-group"
-    ]
-    
-    try:
-        run_process(
-            "fastlane",
-            "produce",
-            "disable_services",
-            "--skip_itc",
-            "--app_identifier",
-            bundle_id,
-            *all_services,
-            env=my_env,
-        )
-    except Exception as e:
-        print(f"Warning: Could not disable services (may not exist): {e}")
-
-    # Enable master capabilities
-    if master_services:
-        print(f"Enabling master services for {bundle_id}: {master_services}")
-        run_process(
-            "fastlane",
-            "produce",
-            "enable_services",
-            "--skip_itc",
-            "--app_identifier",
-            bundle_id,
-            *master_services,
-            env=my_env,
-        )
-
-    # Register app groups and iCloud containers with master setup
-    master_entitlements = generate_master_entitlements(team_id, bundle_id)
-    
-    app_extras = [
-        ("cloud_container", "iCloud.", ["com.apple.developer.icloud-container-identifiers"]), 
-        ("group", "group.", ["com.apple.security.application-groups"])
-    ]
-    
-    with ThreadPool(len(app_extras)) as p:
-        p.starmap(
-            lambda extra_type, extra_prefix, matchable_entitlements: fastlane_register_app_extras(
-                my_env, bundle_id, extra_type, extra_prefix, matchable_entitlements, master_entitlements
-            ),
-            app_extras,
-        )
-
-    report_certificate_status("completed", f"App {bundle_id} registered with master capabilities")
-
-
 def fastlane_get_prov_profile(
     account_name: str, account_pass: str, team_id: str, bundle_id: str, prov_type: str, platform: str, out_file: Path
 ):
     """Generate provisioning profile using Fastlane."""
     import tempfile
     import shutil
-    from .webhooks import report_profile_status
+    from .webhooks import report_job_progress
     
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
 
-    report_profile_status("in_progress", f"Generating provisioning profile for {bundle_id}")
+    report_job_progress(65, f"Generating provisioning profile for {bundle_id}")
 
     with tempfile.TemporaryDirectory() as tmpdir_str:
         run_process(
@@ -372,125 +274,110 @@ def fastlane_get_prov_profile(
         )
         shutil.copy2(Path(tmpdir_str).joinpath("prov.mobileprovision"), out_file)
 
-    report_profile_status("completed", f"Provisioning profile generated for {bundle_id}")
 
+def fastlane_get_certificate(
+    account_name: str, 
+    account_pass: str, 
+    team_id: str, 
+    account_id: str,
+    cert_type: str = "development"
+) -> Optional[str]:
+    """
+    Generate or retrieve certificate using Fastlane.
+    
+    Args:
+        account_name: Apple Developer account email
+        account_pass: Apple Developer account password
+        team_id: Apple Developer team ID
+        account_id: Server account ID for certificate storage
+        cert_type: Certificate type (development or distribution)
+    
+    Returns:
+        Path to certificate file or None if failed
+    """
+    import tempfile
+    import shutil
+    import base64
+    from .webhooks import get_certificate_from_server, upload_certificate, report_progress
+    
+    report_progress(35, "Checking for existing certificate")
+    
+    # Try to get certificate from server first
+    cert_info = get_certificate_from_server(account_id)
+    if cert_info and cert_info.get("certificate_data"):
+        print("Using existing certificate from server")
+        report_progress(45, "Using existing certificate")
+        
+        # Save certificate data to temporary file
+        cert_data = cert_info["certificate_data"]
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.p12', delete=False) as f:
+            f.write(cert_data)
+            return f.name
+    
+    # No certificate found on server, generate new one
+    print("Generating new certificate with Fastlane")
+    report_progress(38, "Generating new certificate")
+    
+    my_env = os.environ.copy()
+    my_env["FASTLANE_USER"] = account_name
+    my_env["FASTLANE_PASSWORD"] = account_pass
+    my_env["FASTLANE_TEAM_ID"] = team_id
+    
+    with tempfile.TemporaryDirectory() as tmpdir_str:
+        tmpdir = Path(tmpdir_str)
+        cert_path = tmpdir.joinpath("cert.p12")
+        
+        try:
+            # Generate certificate using Fastlane cert
+            cert_type_flag = "--development" if cert_type == "development" else ""
+            
+            run_process(
+                "fastlane",
+                "cert",
+                cert_type_flag,
+                "--output_path",
+                str(tmpdir),
+                "--filename",
+                "cert.p12",
+                env=my_env,
+            )
+            
+            if not cert_path.exists():
+                raise Exception("Certificate generation failed - cert.p12 not found")
+            
+            # Read and encode certificate
+            with open(cert_path, 'rb') as f:
+                cert_bytes = f.read()
+                cert_data_encoded = base64.b64encode(cert_bytes).decode('utf-8')
+            
+            report_progress(42, "Uploading certificate to server")
+            
+            # Upload to server
+            upload_certificate(account_id, team_id, cert_data_encoded)
+            
+            report_progress(45, "Certificate ready")
+            
+            # Copy to a permanent temporary file
+            final_cert_path = tempfile.NamedTemporaryFile(mode='wb', suffix='.p12', delete=False)
+            final_cert_path.write(cert_bytes)
+            final_cert_path.close()
+            
+            return final_cert_path.name
+            
+        except Exception as e:
+            print(f"Certificate generation failed: {e}")
+            report_progress(0, f"Certificate generation failed: {e}", state=0)
+            raise
 
-def get_master_service_flags(required_capabilities: List[str] = None) -> List[str]:
-    """Get comprehensive service flags for master certificate."""
-    # Base master services that should always be enabled
-    master_services = [
-        "--push-notification",
-        "--health-kit",
-        "--home-kit",
-        "--wireless-accessory",
-        "--inter-app-audio",
-        "--extended-virtual-address-space",
-        "--multipath",
-        "--network-extension",
-        "--personal-vpn",
-        "--access-wifi",
-        "--nfc-tag-reading",
-        "--siri-kit",
-        "--associated-domains",
-        "--icloud", "xcode6_compatible",
-        "--app-group"
-    ]
+def fastlane_register_device(
+    account_name: str,
+    account_pass: str,
+    team_id: str,
+    device_udid: str
+):
+    """Register device with Apple Developer Portal using Fastlane."""
+    import tempfile
+    import shutil
+    from .webhooks import report_progress
     
-    # Add additional services based on required capabilities
-    if required_capabilities:
-        capability_service_map = {
-            "push_notifications": ["--push-notification"],
-            "healthkit": ["--health-kit"],
-            "homekit": ["--home-kit"],
-            "wireless_accessory": ["--wireless-accessory"],
-            "inter_app_audio": ["--inter-app-audio"],
-            "extended_virtual_addressing": ["--extended-virtual-address-space"],
-            "multipath": ["--multipath"],
-            "network_extensions": ["--network-extension"],
-            "personal_vpn": ["--personal-vpn"],
-            "wifi_info": ["--access-wifi"],
-            "nfc_tag_reading": ["--nfc-tag-reading"],
-            "sirikit": ["--siri-kit"],
-            "associated_domains": ["--associated-domains"],
-            "icloud": ["--icloud", "xcode6_compatible"],
-            "app_groups": ["--app-group"]
-        }
-        
-        for capability in required_capabilities:
-            if capability in capability_service_map:
-                for service in capability_service_map[capability]:
-                    if service not in master_services:
-                        master_services.append(service)
-    
-    return master_services
-
-
-def generate_master_entitlements(team_id: str, bundle_id: str) -> Dict[str, Any]:
-    """Generate comprehensive entitlements for master certificate."""
-    master_entitlements = {
-        # Core identifiers
-        "application-identifier": f"{team_id}.{bundle_id}",
-        "com.apple.developer.team-identifier": team_id,
-        
-        # Push notifications
-        "aps-environment": "development",
-        
-        # App groups (with default group)
-        "com.apple.security.application-groups": [f"group.{bundle_id}.shared"],
-        
-        # iCloud capabilities
-        "com.apple.developer.icloud-services": ["CloudKit"],
-        "com.apple.developer.icloud-container-identifiers": [f"iCloud.{bundle_id}"],
-        "com.apple.developer.ubiquity-container-identifiers": [f"iCloud.{bundle_id}"],
-        "com.apple.developer.ubiquity-kvstore-identifier": f"{team_id}.{bundle_id}",
-        "com.apple.developer.icloud-container-environment": "Development",
-        
-        # Keychain sharing
-        "keychain-access-groups": [f"{team_id}.{bundle_id}"],
-        
-        # Development settings
-        "get-task-allow": True,
-        
-        # Health and Home
-        "com.apple.developer.healthkit": True,
-        "com.apple.developer.healthkit.access": [],
-        "com.apple.developer.homekit": True,
-        
-        # Network capabilities
-        "com.apple.developer.networking.networkextension": ["packet-tunnel-provider"],
-        "com.apple.developer.networking.vpn.api": ["allow-vpn"],
-        "com.apple.developer.networking.wifi-info": True,
-        "com.apple.developer.networking.multipath": True,
-        
-        # Other capabilities
-        "com.apple.external-accessory.wireless-configuration": True,
-        "inter-app-audio": True,
-        "com.apple.developer.nfc.readersession.formats": ["NDEF", "TAG"],
-        "com.apple.developer.siri": True,
-        "com.apple.developer.associated-domains": ["*"],
-        "com.apple.developer.kernel.extended-virtual-addressing": True
-    }
-    
-    return master_entitlements
-
-
-def get_or_reuse_certificate(account_id: str, team_id: str, capabilities: List[str]) -> Optional[str]:
-    """Get existing certificate or determine if new one is needed."""
-    from .webhooks import get_certificate_info
-    
-    # Try to get existing certificate that supports required capabilities
-    cert_info = get_certificate_info(account_id, capabilities)
-    
-    if cert_info:
-        cert_data = cert_info.get("certificate_data")
-        stored_capabilities = cert_info.get("capabilities", [])
-        
-        # Check if existing certificate supports all required capabilities
-        if all(cap in stored_capabilities for cap in capabilities):
-            print(f"Reusing existing certificate with {len(stored_capabilities)} capabilities")
-            return cert_data
-        else:
-            print(f"Existing certificate missing capabilities: {set(capabilities) - set(stored_capabilities)}")
-    
-    print("No suitable existing certificate found, will generate new master certificate")
-    return None
+    my_env = os.environ.copy()

@@ -24,7 +24,7 @@ from pathlib import Path
 from lib import (
     Signer, SignOpts, 
     report_progress, complete_job, fail_job, get_job_info,
-    generate_bundle_id_from_email, rand_str, read_file,
+    rand_str, read_file,
     security_import, security_remove_keychain,
     inject_tweaks
 )
@@ -118,8 +118,9 @@ def run(job_data, account_data, ipa_data):
         print("Signing...")
         report_progress(30, "Starting signing process")
         
-        # Get account ID from job data for bundle ID management
+        # Get account ID and device UDID from job data
         account_id = account_data.get("uuid", "")
+        device_udid = job_data.get("device_udid", "")
         
         Signer(
             SignOpts(
@@ -139,7 +140,8 @@ def run(job_data, account_data, ipa_data):
                 False, # patch_ids
                 False, # force_original_id
                 account_id,  # account_id for bundle ID management
-                True,  # use_master_capabilities
+                job_id,  # job_id for bundle ID management
+                device_udid,  # device_udid for provisioning profile
             )
         ).sign()
 
@@ -189,12 +191,7 @@ def main():
 
         # Generate bundle ID from developer email
         developer_email = account_data.get("email", "")
-        if developer_email:
-            user_bundle_id = generate_bundle_id_from_email(developer_email)
-            print(f"Generated bundle ID: {user_bundle_id}")
-        else:
-            user_bundle_id = None
-
+        user_bundle_id = None
         keychain_name = "ios-signer-" + rand_str(8)
 
     except Exception as e:
