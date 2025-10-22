@@ -15,7 +15,7 @@ from typing import Dict, Any, List, Set, Tuple, Optional
 from multiprocessing.pool import ThreadPool
 from .utils import run_process, clean_dev_portal_name, decode_clean
 from .webhooks import webhook_request, job_id
-
+from .security import security_import
 
 def fastlane_auth(account_name: str, account_pass: str, team_id: str):
     """Authenticate with Apple Developer Portal using Fastlane."""
@@ -280,6 +280,7 @@ def fastlane_get_certificate(
     account_pass: str, 
     team_id: str, 
     account_id: str,
+    keychain_name: str,
     cert_type: str = "development"
 ) -> Optional[str]:
     """
@@ -290,6 +291,7 @@ def fastlane_get_certificate(
         account_pass: Apple Developer account password
         team_id: Apple Developer team ID
         account_id: Server account ID for certificate storage
+        keychain_name: Keychain name for certificate storage
         cert_type: Certificate type (development or distribution)
     
     Returns:
@@ -312,8 +314,10 @@ def fastlane_get_certificate(
         cert_data = cert_info["certificate_data"]
         with tempfile.NamedTemporaryFile(mode='w', suffix='.p12', delete=False) as f:
             f.write(cert_data)
-            return f.name
-    
+        certificate_path = Path(f.name)
+        security_import(certificate_path, "",  keychain_name)
+        return certificate_path.name
+
     # No certificate found on server, generate new one
     print("Generating new certificate with Fastlane")
     report_progress(38, "Generating new certificate")
@@ -325,15 +329,18 @@ def fastlane_get_certificate(
     
     with tempfile.TemporaryDirectory() as tmpdir_str:
         tmpdir = Path(tmpdir_str)
-        cert_path = tmpdir.joinpath("cert.p12")
         
         try:
             # Generate certificate using Fastlane cert
-            cert_type_flag = "--development" if cert_type == "development" else ""
+            # The cert_type_flag tells Fastlane what kind of certificate to create
+            # Think of it like choosing between a "student ID" (development) or "official ID" (distribution)
+            cert_type_flag = "--development" if cert_type == "development" else "--distribution"
             
             run_process(
                 "fastlane",
                 "cert",
+                "create",
+                "--force",
                 cert_type_flag,
                 "--output_path",
                 str(tmpdir),
@@ -342,11 +349,28 @@ def fastlane_get_certificate(
                 env=my_env,
             )
             
-            if not cert_path.exists():
-                raise Exception("Certificate generation failed - cert.p12 not found")
+            # Fastlane creates multiple files, but we need to find the actual P12 file
+            # that contains both the certificate AND private key together.
+            # Fastlane often names it with your Team ID like "TC4R2GC5QS.p12"
+            # We search for any .p12 file (but NOT .p12.cer files, those are certificate-only)
+            
+            actual_cert_path = None
+            
+            # Look for files ending in .p12 (but not .p12.cer)
+            for file in tmpdir.glob("*.p12"):
+                # Skip .cer files - they only contain the certificate, not the private key
+                if not str(file).endswith(".p12.cer"):
+                    actual_cert_path = file
+                    print(f"Found certificate with private key: {file.name}")
+                    break
+            
+            if not actual_cert_path or not actual_cert_path.exists():
+                # List all files in the directory to help debug
+                all_files = list(tmpdir.glob("*"))
+                raise Exception(f"Certificate generation failed - no valid .p12 file found. Files in directory: {[f.name for f in all_files]}")
             
             # Read and encode certificate
-            with open(cert_path, 'rb') as f:
+            with open(actual_cert_path, 'rb') as f:
                 cert_bytes = f.read()
                 cert_data_encoded = base64.b64encode(cert_bytes).decode('utf-8')
             

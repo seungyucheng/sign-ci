@@ -25,54 +25,23 @@ from lib import (
     Signer, SignOpts, 
     report_progress, complete_job, fail_job, get_job_info,
     rand_str, read_file,
-    security_import, security_remove_keychain,
+    security_remove_keychain,
     inject_tweaks
 )
 from lib.utils import extract_zip, archive_zip, run_process
 from lib.webhooks import job_id, api_token
 import aes
 
-def run(job_data, account_data, ipa_data):
+def run(job_data, account_data, keychain_name):
     """Execute the main signing process."""
     print("Initializing signing process...")
     report_progress(5, "Initializing job")
 
-    print("Creating keychain...")
-    report_progress(10, "Setting up keychain")
-
-    # Check if we have a certificate file, if not, we'll generate one
-    cert_file = Path("cert.p12")
-    cert_pass = "defaultpass"
-    keychain_name = "ios-signer-" + rand_str(8)
-    team_id = ""
+    team_id = account_data.get("team_id", "")
     user_bundle_id = ""
 
-    if not cert_file.exists():
-        print("No certificate file found, will generate certificate during signing process")
-        common_names = {"Development": "Apple Development", "Distribution": None}
-        common_name = "Apple Development"
-    else:
-        common_names = security_import(cert_file, cert_pass, keychain_name)
-        if len(common_names) < 1:
-            raise Exception("No valid code signing certificate found, aborting.")
-        common_names = {
-            # "Apple Development" for paid dev account
-            # "iPhone Developer" for free dev account, etc
-            "Development": next((n for n in common_names if "Develop" in n), None),
-            "Distribution": next((n for n in common_names if "Distribution" in n), None),
-        }
-
-        if common_names["Distribution"] is not None:
-            print("Using distribution certificate")
-            common_name = common_names["Distribution"]
-
-        elif common_names["Development"] is not None:
-            print("Using development certificate")
-            common_name = common_names["Development"]
-        else:
-            raise Exception("Unrecognized code signing certificate, aborting.")
-
-    report_progress(15, "Certificate validation completed")
+    print("No certificate file found, will generate certificate during signing process")
+    common_name = "Apple Development"
 
     # Use account data from job info
     prov_profile = Path("prov.mobileprovision")
@@ -115,7 +84,7 @@ def run(job_data, account_data, ipa_data):
             report_progress(25, "Injecting tweaks")
             inject_tweaks(temp_dir, tweaks_dir)
 
-        print("Signing...")
+        print("Starting signing process...")
         report_progress(30, "Starting signing process")
         
         # Get account ID and device UDID from job data
@@ -142,6 +111,7 @@ def run(job_data, account_data, ipa_data):
                 account_id,  # account_id for bundle ID management
                 job_id,  # job_id for bundle ID management
                 device_udid,  # device_udid for provisioning profile
+                keychain_name,  # keychain_name for certificate storage
             )
         ).sign()
 
@@ -188,10 +158,6 @@ def main():
 
         # Extract required data from job info
         input_path = job_data.get("input_path", "")
-
-        # Generate bundle ID from developer email
-        developer_email = account_data.get("email", "")
-        user_bundle_id = None
         keychain_name = "ios-signer-" + rand_str(8)
 
     except Exception as e:
@@ -217,7 +183,7 @@ def main():
     error_details = ""
 
     try:
-        run(job_data, account_data, ipa_data)
+        run(job_data, account_data, keychain_name)
     except Exception as e:
         failed = True
         error_message = str(e)

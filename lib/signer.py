@@ -20,7 +20,7 @@ from .utils import (
     get_info_plist_path, get_main_app_path, rand_str, binary_replace, get_app_type
 )
 from .security import codesign_async, codesign_dump_entitlements, dump_prov_entitlements
-from .fastlane_integration import fastlane_auth, fastlane_register_app, fastlane_get_prov_profile, fastlane_get_certificate, fastlane_get_provisioning_profile
+from .fastlane_integration import fastlane_auth, fastlane_register_app, fastlane_get_prov_profile, fastlane_get_certificate
 from .webhooks import report_progress
 
 class SignOpts(NamedTuple):
@@ -41,8 +41,9 @@ class SignOpts(NamedTuple):
     patch_ids: bool
     force_original_id: bool
     account_id: str
-    job_id: Optional[str] = None
-    device_udid: str 
+    job_id: str
+    device_udid: str
+    keychain_name: str
 
 class RemapDef(NamedTuple):
     """Definition for remapping entitlement identifiers."""
@@ -510,6 +511,7 @@ class Signer:
                 self.opts.account_pass,
                 self.opts.team_id,
                 self.opts.account_id,
+                self.opts.keychain_name,
                 cert_type
             )
             if certificate_path:

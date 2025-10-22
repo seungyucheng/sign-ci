@@ -30,20 +30,21 @@ def security_remove_keychain(keychain: str):
 
 def security_import(cert: Path, cert_pass: str, keychain: str) -> List[str]:
     """Import certificate into keychain and return identity names."""
-    password = "1234"
-    keychains = [*security_get_keychain_list(), keychain]
-    run_process("security", "create-keychain", "-p", password, keychain)
-    run_process("security", "unlock-keychain", "-p", password, keychain)
-    run_process("security", "set-keychain-settings", keychain)
+    password = "03c7c0ace39"
+    created_keychain = f"{keychain}.keychain-db"
+    keychains = [*security_get_keychain_list(), created_keychain]
+    run_process("security", "create-keychain", "-p", password, created_keychain)
+    run_process("security", "unlock-keychain", "-p", password, created_keychain)
+    run_process("security", "set-keychain-settings", created_keychain)
     run_process("security", "list-keychains", "-d", "user", "-s", *keychains)
-    run_process("security", "import", str(cert), "-P", cert_pass, "-A", "-k", keychain)
+    run_process("security", "import", str(cert), "-P", cert_pass, "-A", "-k", created_keychain)
     run_process(
         "security",
         *["set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k"],
         password,
         keychain,
     )
-    identity: str = decode_clean(run_process("security", "find-identity", "-p", "appleID", "-v", keychain).stdout)
+    identity: str = decode_clean(run_process("security", "find-identity", "-p", "appleID", "-v", created_keychain).stdout)
     return [line.strip('"') for line in re.findall('".*"', identity)]
 
 
