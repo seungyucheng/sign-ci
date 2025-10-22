@@ -22,7 +22,7 @@ from pathlib import Path
 
 # Import from our modular library
 from lib import (
-    Signer, SignOpts, 
+    Signer, SignOpts,
     report_progress, complete_job, fail_job, get_job_info,
     rand_str, read_file,
     security_remove_keychain,
@@ -86,11 +86,11 @@ def run(job_data, account_data, keychain_name):
 
         print("Starting signing process...")
         report_progress(30, "Starting signing process")
-        
+
         # Get account ID and device UDID from job data
         account_id = account_data.get("uuid", "")
         device_udid = job_data.get("device_udid", "")
-        
+
         Signer(
             SignOpts(
                 temp_dir,
@@ -152,7 +152,6 @@ def main():
         job_info = get_job_info()
         job_data = job_info.get("job", {})
         account_data = job_info.get("account", {})
-        ipa_data = job_info.get("ipa", {})
 
         print(f"Job data received: {job_data.get('job_type', 'unknown')}")
 

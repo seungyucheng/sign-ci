@@ -1,9 +1,11 @@
 # iOS App Signing Tools
 
 ## Description
+
 This GitHub Action automatically signs iOS IPA files using Apple Developer certificates and provisioning profiles. It integrates with a backend server through webhook APIs to provide real-time progress tracking and job management.
 
 ## Features
+
 - **Automated IPA Signing**: Signs iOS apps with proper certificates and provisioning profiles
 - **Real-time Progress Tracking**: Reports signing progress through webhook APIs
 - **Certificate Management**: Automatically generates and manages Apple Developer certificates
@@ -17,11 +19,13 @@ This GitHub Action automatically signs iOS IPA files using Apple Developer certi
 ## Environment Variables
 
 ### Required
+
 - `JOB_ID`: Unique identifier for the signing job
 - `API_TOKEN`: Authentication token for webhook API calls
 - `SECRET_URL`: Base URL of the backend server
 
 ### Optional
+
 - `SECRET_KEY`: Legacy authentication key (for backward compatibility)
 
 ## Webhook Integration
@@ -29,25 +33,23 @@ This GitHub Action automatically signs iOS IPA files using Apple Developer certi
 The signing tool communicates with the backend server through the following webhook endpoints:
 
 ### Job Management
+
 - `POST /api/v1/webhook/job/start` - Fetch comprehensive job information
 - `POST /api/v1/webhook/job/progress` - Report signing progress
 - `POST /api/v1/webhook/job/complete` - Mark job as completed
 - `POST /api/v1/webhook/job/fail` - Report job failure
 
 ### Certificate & Profile Management
-- `POST /api/v1/webhook/certificate/status` - Report certificate generation status
-- `POST /api/v1/webhook/profile/status` - Report provisioning profile status
+
 - `POST /api/v1/webhook/certificate/get` - Retrieve existing certificate for account
 - `POST /api/v1/webhook/certificate/store` - Store certificate for reuse
 
 ### Bundle ID Management
+
 - `POST /api/v1/webhook/bundle/get` - Get existing bundle ID mapping
 - `POST /api/v1/webhook/bundle/store` - Store bundle ID mapping for reuse
 - `POST /api/v1/webhook/bundle/extensions` - Get extensions for main app
 - `POST /api/v1/webhook/bundle/extension/store` - Store app extension relationship
-
-### App Analysis & Capabilities
-- `POST /api/v1/webhook/app/capabilities` - Store app capabilities and entitlements
 
 ## Usage
 
@@ -138,55 +140,64 @@ curl -X POST \
 }
 ```
 
-
 ## Key Improvements
 
 ### Advanced Bundle ID Management System
+
 The system now features a comprehensive bundle ID management system that handles complex apps with multiple components:
 
 #### Account-Based Bundle ID Reuse
+
 - **Persistent Mappings**: Bundle IDs are stored server-side and reused across signing sessions
 - **Developer Account Consistency**: Same developer account always gets the same bundle IDs
 - **Original Format**: Still generates bundle IDs in format `com.hs.xx` where `xx` is derived from email
 - **Example**: `damoncoo@gmail.com` → `com.hs.a1b2c3` (consistent across all apps for this account)
 
 #### Extension and Component Support
+
 - **Automatic Detection**: Analyzes IPAs to detect all extensions and components
 - **Smart Mapping**: Creates proper bundle ID relationships (main app + extensions)
 - **Extension Types**: Supports Today widgets, Share extensions, Action extensions, Photo extensions, Keyboard extensions, Notification extensions
 - **Hierarchical IDs**: Extensions get bundle IDs like `com.hs.a1b2c3.widget` or `com.hs.a1b2c3.share`
 
 #### Capability Analysis
+
 - **Entitlement Detection**: Automatically detects required capabilities from app entitlements
 - **Info.plist Analysis**: Fallback capability detection from Info.plist when entitlements unavailable
 - **Comprehensive Coverage**: Supports 40+ different iOS/macOS capabilities including HealthKit, HomeKit, Push Notifications, iCloud, etc.
 
 ### Master Certificate System
+
 The signing system now uses a master certificate approach for maximum compatibility and efficiency:
 
 #### Comprehensive Capability Support
+
 - **All-in-One Certificates**: Generates certificates with support for all possible app capabilities
 - **Future-Proof**: New apps with different capabilities can reuse existing certificates
 - **Reduced Complexity**: No need to generate separate certificates for different capability combinations
 
 #### Certificate Reuse and Management
+
 - **Account-Based Storage**: Certificates are stored server-side per developer account
 - **Intelligent Reuse**: Existing certificates are reused when they support required capabilities
 - **Automatic Fallback**: Generates new master certificates only when existing ones are insufficient
 - **Capability Validation**: Verifies certificate compatibility before reuse
 
 #### Enhanced Fastlane Integration
+
 - **Master App Registration**: Registers apps with comprehensive service flags
 - **Capability-Aware Profiles**: Generates provisioning profiles that match detected capabilities
 - **Bulk Service Management**: Efficiently enables/disables multiple Apple Developer Portal services
 
 ### Direct S3 Integration
+
 - Downloads IPA files directly from S3 URLs provided in job data
 - No dependency on legacy job archive files
 - Supports pre-signed URLs with authentication parameters
 - Fallback to legacy download method for backward compatibility
 
 ### Streamlined Configuration
+
 - No more dependency on `job.tar`, `cert_pass.txt`, or other legacy files
 - All configuration comes from webhook job data
 - Account credentials handled securely with base64 decoding
@@ -214,6 +225,7 @@ The signing process follows these steps with real-time progress reporting:
 ## Progress Tracking
 
 Progress is reported at key milestones:
+
 - **5%**: Job initialization
 - **10%**: Keychain setup
 - **15%**: Certificate validation
@@ -229,6 +241,7 @@ Progress is reported at key milestones:
 ## Error Handling
 
 The system includes comprehensive error handling:
+
 - **Automatic Retry**: Transient failures are automatically retried
 - **Detailed Logging**: All errors are logged with full stack traces
 - **Webhook Reporting**: Failures are reported to server with error details
@@ -259,15 +272,18 @@ decrypted_text = decrypt_aes_256_cbc_pkcs7(
 ```
 
 **Function Parameters:**
+
 - `encrypted_data`: The encrypted data (can be base64 string or bytes)
 - `key_string`: The encryption key as UTF-8 string
 - `iv_string`: The initialization vector as UTF-8 string
 
 **Requirements:**
+
 - Either `cryptography` or `pycryptodome` library must be installed
 - Install with: `pip install cryptography`
 
 **How it works:**
+
 1. Converts the UTF-8 key string to a 32-byte AES key using SHA-256
 2. Converts the UTF-8 IV string to a 16-byte IV using MD5
 3. Decodes base64 data if provided as string
@@ -280,15 +296,19 @@ This function is used to decrypt Apple Developer account passwords and other sen
 ## Webhook API Reference
 
 ### Authentication
+
 All webhook requests must include the `X-API-Token` header:
+
 ```
 X-API-Token: your-api-token-here
 ```
 
 ### Request/Response Format
+
 All requests and responses use JSON format with the following structure:
 
 **Request:**
+
 ```json
 {
   "job_id": "uuid",
@@ -297,6 +317,7 @@ All requests and responses use JSON format with the following structure:
 ```
 
 **Response:**
+
 ```json
 {
   "code": 1,
@@ -308,6 +329,7 @@ All requests and responses use JSON format with the following structure:
 ### Endpoint Details
 
 #### Job Progress Updates
+
 ```bash
 POST /api/v1/webhook/job/progress
 Content-Type: application/json
@@ -322,6 +344,7 @@ X-API-Token: your-token
 ```
 
 #### Certificate Status Updates
+
 ```bash
 POST /api/v1/webhook/certificate/status
 Content-Type: application/json
@@ -336,6 +359,7 @@ X-API-Token: your-token
 ```
 
 #### Profile Status Updates
+
 ```bash
 POST /api/v1/webhook/profile/status
 Content-Type: application/json
@@ -350,6 +374,7 @@ X-API-Token: your-token
 ```
 
 #### Job Completion
+
 ```bash
 POST /api/v1/webhook/job/complete
 Content-Type: application/json
@@ -365,6 +390,7 @@ X-API-Token: your-token
 ```
 
 #### Job Failure
+
 ```bash
 POST /api/v1/webhook/job/fail
 Content-Type: application/json
@@ -380,11 +406,13 @@ X-API-Token: your-token
 ## Configuration
 
 ### GitHub Secrets Required
+
 - `SECRET_URL`: Backend server URL
 - `API_TOKEN`: Webhook authentication token
 - `SECRET_KEY`: Legacy authentication key (optional)
 
 ### Workflow Inputs
+
 - `job_id`: The unique identifier for the signing job to process
 
 ## Troubleshooting
@@ -397,7 +425,9 @@ X-API-Token: your-token
 4. **Network Timeouts**: Increase timeout values for slow network connections
 
 ### Debug Mode
+
 Enable debug logging by setting environment variable:
+
 ```bash
 export PYTHONUNBUFFERED=1
 ```
