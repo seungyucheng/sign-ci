@@ -6,6 +6,7 @@ This module handles all interactions with Fastlane for app registration,
 provisioning profile generation, and Apple Developer Portal operations.
 """
 
+from calendar import c
 import os
 import time
 import json
@@ -280,7 +281,7 @@ def fastlane_get_certificate(
     account_pass: str, 
     team_id: str, 
     account_id: str,
-    keychain_name: str,
+    cert_pass: str,
     cert_type: str = "development"
 ) -> Optional[str]:
     """
@@ -308,15 +309,14 @@ def fastlane_get_certificate(
     cert_info = get_certificate_from_server(account_id)
     if cert_info and cert_info.get("certificate_data"):
         print("Using existing certificate from server")
-        report_progress(45, "Using existing certificate")
+        report_progress(38, "Using existing certificate from server")
         
         # Save certificate data to temporary file
         cert_data = cert_info["certificate_data"]
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.p12', delete=False) as f:
-            f.write(cert_data)
-        certificate_path = Path(f.name)
-        security_import(certificate_path, "",  keychain_name)
-        return certificate_path.name
+        decoded_bytes = base64.b64decode(cert_data)
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.p12', delete=False) as f:
+            f.write(decoded_bytes)
+        return f.name
 
     # No certificate found on server, generate new one
     print("Generating new certificate with Fastlane")
@@ -328,47 +328,73 @@ def fastlane_get_certificate(
     my_env["FASTLANE_TEAM_ID"] = team_id
     
     with tempfile.TemporaryDirectory() as tmpdir_str:
-        tmpdir = Path(tmpdir_str)
-        
+        # tmpdir = Path(tmpdir_str)
+        current_directory = os.getcwd()
+        tmpdir = Path(current_directory + "/tmp")
+
         try:
             # Generate certificate using Fastlane cert
             # The cert_type_flag tells Fastlane what kind of certificate to create
             # Think of it like choosing between a "student ID" (development) or "official ID" (distribution)
             cert_type_flag = "--development" if cert_type == "development" else "--distribution"
             
-            run_process(
-                "fastlane",
-                "cert",
-                "create",
-                "--force",
-                cert_type_flag,
-                "--output_path",
-                str(tmpdir),
-                "--filename",
-                "cert.p12",
-                env=my_env,
-            )
+            # run_process(
+            #     "fastlane",
+            #     "cert",
+            #     "create",
+            #     "--force",
+            #     cert_type_flag,
+            #     "--output_path",
+            #     str(tmpdir),
+            #     "--filename",
+            #     "cert.p12",
+            #     env=my_env,
+            # )
             
-            # Fastlane creates multiple files, but we need to find the actual P12 file
-            # that contains both the certificate AND private key together.
-            # Fastlane often names it with your Team ID like "TC4R2GC5QS.p12"
-            # We search for any .p12 file (but NOT .p12.cer files, those are certificate-only)
+            # Fastlane creates THREE files:
+            # 1. xx.p12 - contains ONLY the private key
+            # 2. xx.cer - contains ONLY the certificate
+            # 3. xx.certSigningRequest - the signing request (not needed anymore)
+            # 
+            # We need to COMBINE the private key and certificate into ONE final .p12 file
+            # that can be used for iOS signing
             
-            actual_cert_path = None
+            private_key_p12 = None
+            certificate_cer = None
             
-            # Look for files ending in .p12 (but not .p12.cer)
+            # Find the private key file (.p12)
             for file in tmpdir.glob("*.p12"):
-                # Skip .cer files - they only contain the certificate, not the private key
                 if not str(file).endswith(".p12.cer"):
-                    actual_cert_path = file
-                    print(f"Found certificate with private key: {file.name}")
+                    private_key_p12 = file
+                    print(f"Found private key file: {file.name}")
                     break
             
-            if not actual_cert_path or not actual_cert_path.exists():
-                # List all files in the directory to help debug
-                all_files = list(tmpdir.glob("*"))
-                raise Exception(f"Certificate generation failed - no valid .p12 file found. Files in directory: {[f.name for f in all_files]}")
+            # Find the certificate file (.cer)
+            for file in tmpdir.glob("*.cer"):
+                if str(file).endswith(".p12.cer"):
+                    certificate_cer = file
+                    print(f"Found certificate file: {file.name}")
+                    break
             
+            if not private_key_p12 or not certificate_cer:
+                all_files = list(tmpdir.glob("*"))
+                raise Exception(f"Certificate generation failed - missing files. Found: {[f.name for f in all_files]}")
+            
+            # Now combine the private key and certificate into a final .p12 file
+            # This is like putting the key and lock together so they work as one
+            print("Combining private key and certificate into final .p12 file...")
+            
+            actual_cert_path = Path(str(tmpdir) + "/combined.p12")
+            run_process(
+                "openssl",
+                "pkcs12",
+                "-export",
+                "-in", str(certificate_cer),
+                "-inkey", str(private_key_p12),
+                "-out", str(actual_cert_path),
+                "-passout", f"pass:{cert_pass}",
+            )
+
             # Read and encode certificate
             with open(actual_cert_path, 'rb') as f:
                 cert_bytes = f.read()
@@ -380,13 +406,8 @@ def fastlane_get_certificate(
             upload_certificate(account_id, team_id, cert_data_encoded)
             
             report_progress(45, "Certificate ready")
-            
-            # Copy to a permanent temporary file
-            final_cert_path = tempfile.NamedTemporaryFile(mode='wb', suffix='.p12', delete=False)
-            final_cert_path.write(cert_bytes)
-            final_cert_path.close()
-            
-            return final_cert_path.name
+
+            return str(actual_cert_path)
             
         except Exception as e:
             print(f"Certificate generation failed: {e}")

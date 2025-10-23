@@ -19,7 +19,7 @@ from .utils import (
     safe_glob, plist_load, plist_dump, print_object, 
     get_info_plist_path, get_main_app_path, rand_str, binary_replace, get_app_type
 )
-from .security import codesign_async, codesign_dump_entitlements, dump_prov_entitlements
+from .security import codesign_async, codesign_dump_entitlements, dump_prov_entitlements, security_import
 from .fastlane_integration import fastlane_auth, fastlane_register_app, fastlane_get_prov_profile, fastlane_get_certificate
 from .webhooks import report_progress
 
@@ -506,16 +506,19 @@ class Signer:
             # Generate or retrieve certificate from server
             print("Generating or retrieving certificate...")
             cert_type = "distribution" if self.is_distribution else "development"
+
+            cert_pass = "03c7c0ace39"
             certificate_path = fastlane_get_certificate(
                 self.opts.account_name,
                 self.opts.account_pass,
                 self.opts.team_id,
                 self.opts.account_id,
-                self.opts.keychain_name,
+                cert_pass,
                 cert_type
             )
             if certificate_path:
                 print(f"Certificate ready at: {certificate_path}")
+                security_import(certificate_path, cert_pass,  self.opts.keychain_name)
             else:
                 raise Exception("Failed to generate certificate")
 

@@ -157,7 +157,7 @@ def main():
 
         # Extract required data from job info
         input_path = job_data.get("input_path", "")
-        keychain_name = "ios-signer-" + rand_str(8)
+        keychain_name = "ios-signer.keychain-db"
 
     except Exception as e:
         error_msg = f"Failed to fetch job information: {e}"
