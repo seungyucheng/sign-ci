@@ -28,7 +28,7 @@ def security_remove_keychain(keychain: str):
     run_process("security", "delete-keychain", keychain)
 
 
-def security_import(cert: Path, cert_pass: str, keychain: str) -> List[str]:
+def security_import(cert: str, cert_pass: str, keychain: str) -> List[str]:
     """Import certificate into keychain and return identity names."""
     import os
     
@@ -40,12 +40,17 @@ def security_import(cert: Path, cert_pass: str, keychain: str) -> List[str]:
     home_dir = os.path.expanduser("~")
     created_keychain = f"{home_dir}/Library/Keychains/{keychain}"
     
+    try:
+        run_process("security", "delete-keychain", created_keychain)
+    except Exception as e:
+        print(f"Error deleting keychain: {e}")
+
     keychains = [*security_get_keychain_list(), created_keychain]
     run_process("security", "create-keychain", "-p", password, created_keychain)
     run_process("security", "unlock-keychain", "-p", password, created_keychain)
     run_process("security", "set-keychain-settings", created_keychain)
     run_process("security", "list-keychains", "-d", "user", "-s", *keychains)
-    run_process("security", "import", str(cert), "-P", cert_pass, "-A", "-k", created_keychain)
+    run_process("security", "import", cert, "-P", cert_pass, "-A", "-k", created_keychain, "-f", "pkcs12")
     
     # Set key partition list - IMPORTANT: use created_keychain, not keychain
     run_process(

@@ -314,9 +314,12 @@ def fastlane_get_certificate(
         # Save certificate data to temporary file
         cert_data = cert_info["certificate_data"]
         decoded_bytes = base64.b64decode(cert_data)
-        with tempfile.NamedTemporaryFile(mode='wb', suffix='.p12', delete=False) as f:
+
+        current_directory = os.getcwd()
+        file_path = os.path.join(current_directory, "tmp/downloaded_cert.p12")
+        with open(file_path, "wb") as f:   # use "wb" for binary data
             f.write(decoded_bytes)
-        return f.name
+            return f.name
 
     # No certificate found on server, generate new one
     print("Generating new certificate with Fastlane")
@@ -338,18 +341,18 @@ def fastlane_get_certificate(
             # Think of it like choosing between a "student ID" (development) or "official ID" (distribution)
             cert_type_flag = "--development" if cert_type == "development" else "--distribution"
             
-            # run_process(
-            #     "fastlane",
-            #     "cert",
-            #     "create",
-            #     "--force",
-            #     cert_type_flag,
-            #     "--output_path",
-            #     str(tmpdir),
-            #     "--filename",
-            #     "cert.p12",
-            #     env=my_env,
-            # )
+            run_process(
+                "fastlane",
+                "cert",
+                "create",
+                "--force",
+                cert_type_flag,
+                "--output_path",
+                str(tmpdir),
+                "--filename",
+                "cert.p12",
+                env=my_env,
+            )
             
             # Fastlane creates THREE files:
             # 1. xx.p12 - contains ONLY the private key
