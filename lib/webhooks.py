@@ -350,6 +350,7 @@ def upload_signed_ipa(file_path: str) -> bool:
     
     # Step 1: Get upload URL
     print("Step 1/3: Requesting upload URL...")
+    report_progress(86, "Requesting upload URL from server")
     init_response = initiate_ipa_upload()
     if not init_response:
         print("✗ Failed to get upload URL")
@@ -363,12 +364,14 @@ def upload_signed_ipa(file_path: str) -> bool:
     
     # Step 2: Upload file to S3
     print("Step 2/3: Uploading file to S3...")
+    report_progress(88, "Uploading signed IPA to storage")
     if not upload_file_to_s3(file_path, upload_url):
         print("✗ Failed to upload file")
         return False
     
     # Step 3: Complete the upload
     print("Step 3/3: Confirming upload with server...")
+    report_progress(94, "Confirming upload completion")
     if not complete_signed_ipa_upload(s3_key):
         print("✗ Failed to complete upload")
         return False

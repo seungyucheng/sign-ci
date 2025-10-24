@@ -303,13 +303,13 @@ def fastlane_get_certificate(
     import base64
     from .webhooks import get_certificate_from_server, upload_certificate, report_progress
     
-    report_progress(35, "Checking for existing certificate")
+    report_progress(22, "Checking for existing certificate")
     
     # Try to get certificate from server first
     cert_info = get_certificate_from_server(account_id)
     if cert_info and cert_info.get("certificate_data"):
         print("Using existing certificate from server")
-        report_progress(38, "Using existing certificate from server")
+        report_progress(28, "Using cached certificate")
         
         # Save certificate data to temporary file
         cert_data = cert_info["certificate_data"]
@@ -323,7 +323,7 @@ def fastlane_get_certificate(
 
     # No certificate found on server, generate new one
     print("Generating new certificate with Fastlane")
-    report_progress(38, "Generating new certificate")
+    report_progress(24, "Generating new certificate (this may take a moment)")
     
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
@@ -386,6 +386,7 @@ def fastlane_get_certificate(
             # Now combine the private key and certificate into a final .p12 file
             # This is like putting the key and lock together so they work as one
             print("Combining private key and certificate into final .p12 file...")
+            report_progress(30, "Combining certificate components")
             
             actual_cert_path = Path(str(tmpdir) + "/combined.p12")
             run_process(
@@ -403,12 +404,12 @@ def fastlane_get_certificate(
                 cert_bytes = f.read()
                 cert_data_encoded = base64.b64encode(cert_bytes).decode('utf-8')
             
-            report_progress(42, "Uploading certificate to server")
+            report_progress(33, "Certificate generated, uploading to server")
             
             # Upload to server
             upload_certificate(account_id, team_id, cert_data_encoded)
             
-            report_progress(45, "Certificate ready")
+            report_progress(35, "Certificate uploaded and ready")
 
             return str(actual_cert_path)
             

@@ -36,7 +36,7 @@ import aes
 def run(job_data, account_data, keychain_name):
     """Execute the main signing process."""
     print("Initializing signing process...")
-    report_progress(5, "Initializing job")
+    report_progress(2, "Initializing signing job")
 
     team_id = account_data.get("team_id", "")
     user_bundle_id = ""
@@ -73,20 +73,24 @@ def run(job_data, account_data, keychain_name):
     else:
         raise Exception("Developer account information required but not found in job data.")
 
+    report_progress(8, "Setting up environment")
+    
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
         print("Extracting app...")
-        report_progress(20, "Extracting IPA")
+        report_progress(10, "Extracting IPA package")
         extract_zip(Path("unsigned.ipa"), temp_dir)
+        report_progress(15, "IPA extracted successfully")
 
         tweaks_dir = Path("tweaks")
         if tweaks_dir.exists():
             print("Found tweaks, injecting...")
-            report_progress(25, "Injecting tweaks")
+            report_progress(16, "Injecting tweaks into app")
             inject_tweaks(temp_dir, tweaks_dir)
+            report_progress(18, "Tweaks injected successfully")
 
         print("Starting signing process...")
-        report_progress(30, "Starting signing process")
+        report_progress(20, "Preparing for signing")
 
         # Get account ID and device UDID from job data
         account_id = account_data.get("uuid", "")
@@ -116,12 +120,13 @@ def run(job_data, account_data, keychain_name):
             )
         ).sign()
 
-        report_progress(85, "Signing completed, packaging app")
+        report_progress(78, "All components signed successfully")
         print("Packaging signed app...")
         signed_ipa = Path("signed.ipa")
         archive_zip(temp_dir, signed_ipa)
+        report_progress(83, "Signed IPA package created")
 
-    report_progress(90, "Uploading signed IPA")
+    report_progress(85, "Preparing to upload signed IPA")
 
     # Upload signed IPA to S3 using 3-step process:
     # 1. Request signed URL from server
@@ -129,10 +134,10 @@ def run(job_data, account_data, keychain_name):
     # 3. Confirm upload completion
     if not upload_signed_ipa(str(signed_ipa)):
         raise Exception("Failed to upload signed IPA")
-    report_progress(95, "Upload completed")
-
+    
+    report_progress(96, "Upload completed, finalizing job")
     complete_job(str(signed_ipa))
-    report_progress(100, "Job completed successfully")
+    report_progress(100, "✓ Signing job completed successfully!")
 
 def main():
     """Main entry point for the signing tool."""
