@@ -270,14 +270,130 @@ class Signer:
         print("Signing component...")
         return codesign_async(self.opts.common_name, component, entitlements_plist)
 
+    def _get_extension_bundle_suffix(self, component: Path) -> Optional[str]:
+        """
+        Detect extension type and return appropriate bundle ID suffix.
+        
+        This method reads the extension's Info.plist and checks the NSExtensionPointIdentifier
+        to determine what type of extension it is, then returns the appropriate suffix.
+        
+        Args:
+            component: Path to the component (.appex file)
+            
+        Returns:
+            Custom suffix string (like '.widgetkit') for known extension types,
+            or None if not an extension or unknown type
+        """
+        try:
+            info_plist = get_info_plist_path(component)
+            info: Dict[Any, Any] = plist_load(info_plist)
+            
+            # Check if this component has extension information
+            ns_extension = info.get("NSExtension", {})
+            if not ns_extension:
+                return None
+                
+            extension_point = ns_extension.get("NSExtensionPointIdentifier", "")
+            
+            # Map extension point identifiers to bundle ID suffixes
+            # Comprehensive list of iOS/iPadOS/watchOS extension types
+            extension_map = {
+                # Widget Extensions
+                "com.apple.widgetkit-extension": ".widgetkit",
+                "com.apple.widget-extension": ".widgetkit",  # Legacy widget
+                "com.apple.today-widget": ".todaywidget",
+                "com.apple.glance-widget": ".glancewidget",  # watchOS
+                
+                # Notification Extensions
+                "com.apple.usernotifications.service": ".notificationservice",
+                "com.apple.usernotifications.content-extension": ".notificationcontent",
+                
+                # Share & Action Extensions
+                "com.apple.share-services": ".shareextension",
+                "com.apple.ui-services": ".actionextension",
+                
+                # Media Extensions
+                "com.apple.photo-editing": ".photoediting",
+                "com.apple.audiounit-ui": ".audiounit",
+                "com.apple.broadcast-services-upload": ".broadcastupload",
+                "com.apple.broadcast-services-setup": ".broadcastsetup",
+                
+                # Keyboard & Input Extensions
+                "com.apple.keyboard-service": ".keyboard",
+                
+                # iMessage Extensions
+                "com.apple.message-payload-provider": ".imessage",
+                "com.apple.messages.MSMessagesAppExtension": ".imessageapp",
+                "com.apple.messages-sticker-pack": ".stickers",
+                
+                # Siri & Intents Extensions
+                "com.apple.intents-service": ".intents",
+                "com.apple.intents-ui-service": ".intentsui",
+                
+                # File & Document Extensions
+                "com.apple.fileprovider-ui": ".fileproviderui",
+                "com.apple.fileprovider-nonui": ".fileprovider",
+                "com.apple.quicklook.preview": ".quicklook",
+                "com.apple.DocumentPicker": ".documentpicker",
+                
+                # Security & Privacy Extensions
+                "com.apple.authentication-services-credential-provider-ui": ".credentialprovider",
+                "com.apple.callkit.call-directory": ".calldirectory",
+                "com.apple.identitylookup.message-filter": ".messagefilter",
+                
+                # Content & Safari Extensions
+                "com.apple.Safari.content-blocker": ".contentblocker",
+                "com.apple.Safari.extension": ".safariextension",
+                "com.apple.Safari.web-extension": ".safariwebextension",
+                
+                # Network Extensions
+                "com.apple.networkextension.packet-tunnel": ".vpn",
+                "com.apple.networkextension.app-proxy": ".appproxy",
+                "com.apple.networkextension.filter-data": ".filterdata",
+                "com.apple.networkextension.filter-control": ".filtercontrol",
+                "com.apple.networkextension.dns-proxy": ".dnsproxy",
+                
+                # Spotlight & Search Extensions
+                "com.apple.spotlight.index": ".spotlightindex",
+                "com.apple.services": ".services",
+                
+                # Location Extensions
+                "com.apple.location.push.service": ".locationpush",
+                
+                # ClassKit Extensions
+                "com.apple.classkit.context-provider": ".classkit",
+                
+                # Matter Extensions
+                "com.apple.matter.support.extension.device-setup": ".mattersetup",
+                
+                # Background Assets
+                "com.apple.background-asset-downloader-extension": ".backgroundassets",
+            }
+            
+            return extension_map.get(extension_point)
+            
+        except Exception as e:
+            print(f"Could not detect extension type for {component.name}: {e}")
+            return None
+
     def _prepare_primary(self, component: Path, workdir: Path):
         """Prepare primary component for signing by processing entitlements."""
         info_plist = get_info_plist_path(component)
         info: Dict[Any, Any] = plist_load(info_plist)
         old_bundle_id = info["CFBundleIdentifier"]
         
-        # Create bundle id by suffixing the existing main bundle id with the original suffix
-        bundle_id = f"{self.main_bundle_id}{old_bundle_id[len(self.old_main_bundle_id):]}"
+        # Check if this is an extension with a custom bundle ID pattern
+        custom_suffix = self._get_extension_bundle_suffix(component)
+        
+        if custom_suffix:
+            # Use the custom extension pattern (e.g., .widgetkit for widgets)
+            bundle_id = f"{self.main_bundle_id}{custom_suffix}"
+            print(f"Detected extension type: applying custom bundle ID pattern '{custom_suffix}'")
+            print(f"  Old bundle ID: {old_bundle_id}")
+            print(f"  New bundle ID: {bundle_id}")
+        else:
+            # Create bundle id by suffixing the existing main bundle id with the original suffix
+            bundle_id = f"{self.main_bundle_id}{old_bundle_id[len(self.old_main_bundle_id):]}"
         if not self.opts.force_original_id and old_bundle_id != bundle_id:
             if len(old_bundle_id) != len(bundle_id):
                 print(

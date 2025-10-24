@@ -131,8 +131,7 @@ def fastlane_register_app(
     account_name: str, account_pass: str, team_id: str, bundle_id: str, entitlements: Dict[Any, Any]
 ):
     """Register app with Apple Developer Portal and configure services."""
-    from .webhooks import report_job_progress
-    
+
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
     my_env["FASTLANE_PASSWORD"] = account_pass
@@ -243,14 +242,14 @@ def fastlane_get_prov_profile(
     """Generate provisioning profile using Fastlane."""
     import tempfile
     import shutil
-    from .webhooks import report_job_progress
+    from .webhooks import report_progress
     
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
 
-    report_job_progress(65, f"Generating provisioning profile for {bundle_id}")
+    report_progress(65, f"Generating provisioning profile for {bundle_id}")
 
     with tempfile.TemporaryDirectory() as tmpdir_str:
         run_process(
