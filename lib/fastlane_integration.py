@@ -422,11 +422,61 @@ def fastlane_register_device(
     account_name: str,
     account_pass: str,
     team_id: str,
-    device_udid: str
+    device_udid: str,
+    device_name: str = None
 ):
-    """Register device with Apple Developer Portal using Fastlane."""
-    import tempfile
-    import shutil
+    """
+    Register device with Apple Developer Portal using Fastlane.
+    
+    Args:
+        account_name: Apple Developer account email
+        account_pass: Apple Developer account password
+        team_id: Apple Developer team ID
+        device_udid: Device UDID to register (e.g., "00008101-001451CC0E01001E")
+        device_name: Optional device name (defaults to "Device {UDID[:8]}")
+    
+    This function registers a new device with your Apple Developer account so it can
+    be included in development provisioning profiles. Think of it like adding someone's
+    name to a guest list before sending them an invitation!
+    """
     from .webhooks import report_progress
     
+    # Generate a friendly device name if not provided
+    # Using first 8 characters of UDID to make it recognizable
+    if device_name is None:
+        device_name = f"Device {device_udid[:8]}"
+    
+    print(f"Registering device: {device_name} (UDID: {device_udid})")
+    report_progress(48, f"Registering device with Apple")
+    
     my_env = os.environ.copy()
+    my_env["FASTLANE_USER"] = account_name
+    my_env["FASTLANE_PASSWORD"] = account_pass
+    my_env["FASTLANE_TEAM_ID"] = team_id
+    
+    try:
+        # Register the device using Fastlane
+        # The 'run' command executes a Fastlane action directly
+        # register_device is the action that adds a device to your Apple Developer account
+        run_process(
+            "fastlane",
+            "run",
+            "register_device",
+            f"udid:{device_udid}",
+            f"name:{clean_dev_portal_name(device_name)}",
+            env=my_env,
+        )
+        
+        print(f"✓ Device registered successfully: {device_name}")
+        report_progress(49, "Device registered successfully")
+        
+    except Exception as e:
+        # If device is already registered, Fastlane will throw an error
+        # but that's actually okay - we just want to make sure it exists
+        error_message = str(e)
+        if "already exists" in error_message.lower() or "already registered" in error_message.lower():
+            print(f"✓ Device already registered: {device_name}")
+            report_progress(50, "Device already registered")
+        else:
+            print(f"✗ Failed to register device: {error_message}")
+            raise

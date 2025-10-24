@@ -20,7 +20,7 @@ from .utils import (
     get_info_plist_path, get_main_app_path, rand_str, binary_replace, get_app_type
 )
 from .security import codesign_async, codesign_dump_entitlements, dump_prov_entitlements, security_import
-from .fastlane_integration import fastlane_auth, fastlane_register_app, fastlane_get_prov_profile, fastlane_get_certificate
+from .fastlane_integration import fastlane_auth, fastlane_register_app, fastlane_get_prov_profile, fastlane_get_certificate, fastlane_register_device
 from .webhooks import report_progress
 
 class SignOpts(NamedTuple):
@@ -522,9 +522,19 @@ class Signer:
                 print(f"Certificate ready at: {certificate_path}")
                 report_progress(43, "Importing certificate to keychain")
                 security_import(certificate_path, cert_pass,  self.opts.keychain_name)
-                report_progress(48, "Certificate setup complete")
+                report_progress(46, "Certificate setup complete")
             else:
                 raise Exception("Failed to generate certificate")
+
+            # Register device with Apple
+            print("Registering device with Apple...")
+            fastlane_register_device(
+                self.opts.account_name,
+                self.opts.account_pass,
+                self.opts.team_id,
+                self.opts.device_udid
+            )
+            report_progress(51, "Device registered successfully")
 
             # Sign all components
             jobs: Dict[Path, subprocess.Popen] = {}
