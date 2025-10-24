@@ -24,9 +24,10 @@ from pathlib import Path
 from lib import (
     Signer, SignOpts,
     report_progress, complete_job, fail_job, get_job_info,
-    rand_str, read_file,
+    read_file,
     security_remove_keychain,
-    inject_tweaks
+    inject_tweaks,
+    upload_signed_ipa
 )
 from lib.utils import extract_zip, archive_zip, run_process
 from lib.webhooks import job_id, api_token
@@ -120,18 +121,18 @@ def run(job_data, account_data, keychain_name):
         signed_ipa = Path("signed.ipa")
         archive_zip(temp_dir, signed_ipa)
 
-    print("Uploading...")
     report_progress(90, "Uploading signed IPA")
-    file_id = read_file(Path("file_id.txt")) if Path("file_id.txt").exists() else ""
-    bundle_id = read_file(Path("bundle_id.txt"))
 
-    # Get file size for completion report
-    file_size = signed_ipa.stat().st_size if signed_ipa.exists() else 0
+    # Upload signed IPA to S3 using 3-step process:
+    # 1. Request signed URL from server
+    # 2. Upload file directly to S3
+    # 3. Confirm upload completion
+    if not upload_signed_ipa(str(signed_ipa)):
+        raise Exception("Failed to upload signed IPA")
+    report_progress(95, "Upload completed")
 
-    # Use new webhook system for completion
-    complete_job(f"signed/{job_id}/signed.ipa", file_size)
+    complete_job(str(signed_ipa))
     report_progress(100, "Job completed successfully")
-
 
 def main():
     """Main entry point for the signing tool."""

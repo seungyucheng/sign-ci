@@ -34,7 +34,8 @@ Example usage:
 from .signer import Signer, SignOpts, ComponentData, RemapDef
 from .webhooks import (
     report_progress,
-    complete_job, fail_job, get_job_info
+    complete_job, fail_job, get_job_info,
+    upload_signed_ipa
 )
 from .utils import rand_str, read_file
 from .security import security_import, security_remove_keychain
@@ -49,7 +50,7 @@ __all__ = [
     
     # Webhook functions
     'report_progress', 'report_certificate_status', 'report_profile_status',
-    'complete_job', 'fail_job', 'get_job_info',
+    'complete_job', 'fail_job', 'get_job_info', 'upload_signed_ipa',
     
     # Utility functions
     'generate_bundle_id_from_email', 'rand_str', 'read_file',
