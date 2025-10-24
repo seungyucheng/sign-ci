@@ -22,7 +22,7 @@ jobs:
       ACCOUNT_ID: "${{ inputs.account_id || github.event.client_payload.account_id }}"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Cache Fastlane Session
         uses: actions/cache@v4
