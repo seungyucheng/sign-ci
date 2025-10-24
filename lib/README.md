@@ -5,13 +5,16 @@ This library provides a modular approach to iOS app signing, breaking down the c
 ## 📁 Module Structure
 
 ### `utils.py` - Core Utilities
+
 **What it does:** Contains helper functions used throughout the signing process
+
 - File operations (reading, extracting, archiving)
 - Process execution with error handling
 - Data conversion and manipulation
 - Bundle ID generation from email addresses
 
 **Key functions:**
+
 - `safe_glob()` - Safely iterate through files
 - `run_process()` - Execute commands with proper error handling
 - `extract_zip()`, `archive_zip()` - Handle ZIP archives
@@ -20,62 +23,77 @@ This library provides a modular approach to iOS app signing, breaking down the c
 - `get_or_create_bundle_id()` - Create unique app identifiers
 
 ### `security.py` - Security & Keychain Management
+
 **What it does:** Handles all security-related operations
+
 - Keychain creation and management
 - Certificate importing and validation
 - Provisioning profile operations
 - Code signing preparation
 
 **Key functions:**
+
 - `security_import()` - Import certificates into keychain
 - `security_remove_keychain()` - Clean up keychains
 - `dump_prov_entitlements()` - Extract entitlements from profiles
 - `codesign_async()` - Start code signing processes
 
 ### `webhooks.py` - API Communication
+
 **What it does:** Manages communication with the signing service
+
 - Progress reporting during signing
 - Job status updates
 - Certificate and profile status reporting
 - Error reporting and job completion
 
 **Key functions:**
+
 - `report_progress()` - Update job progress
 - `complete_job()` - Mark job as successful
 - `fail_job()` - Report job failures
 - `get_job_info()` - Retrieve job details from server
 
 ### `fastlane_integration.py` - Apple Developer Portal
+
 **What it does:** Interfaces with Apple's Developer Portal through Fastlane
+
 - Developer account authentication (including 2FA)
 - App registration and service configuration
 - Provisioning profile generation
 - Certificate management
 
 **Key functions:**
+
 - `fastlane_auth()` - Authenticate with Apple
 - `fastlane_register_app()` - Register app and configure services
 - `fastlane_get_prov_profile()` - Generate provisioning profiles
 
 ### `tweak_injection.py` - Tweak & Framework Injection
+
 **What it does:** Handles injection of tweaks and additional frameworks
+
 - Extract and process tweak packages (.deb, .zip, .tar)
 - Inject dynamic libraries and frameworks
 - Handle dependency linking and path resolution
 - Support for Cydia Substrate and other hooking frameworks
 
 **Key functions:**
+
 - `inject_tweaks()` - Main tweak injection process
 - `extract_deb()` - Extract Debian packages with filtering
 
 ### `signer.py` - Main Signing Logic
+
 **What it does:** Orchestrates the entire signing process
+
 - Component preparation and entitlement processing
 - Bundle ID management and remapping
 - Binary patching for identifier changes
 - Coordinated signing of all app components
 
 **Key classes:**
+
 - `Signer` - Main signing orchestrator
 - `SignOpts` - Configuration options
 - `ComponentData` - Component signing information

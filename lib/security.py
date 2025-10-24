@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import List, Dict, Any
 from .utils import run_process, decode_clean, plist_loads
 
-
 def security_get_keychain_list():
     """Get list of user keychains."""
     return map(
@@ -31,15 +30,15 @@ def security_remove_keychain(keychain: str):
 def security_import(cert: str, cert_pass: str, keychain: str) -> List[str]:
     """Import certificate into keychain and return identity names."""
     import os
-    
-    # make the cert pass and keychain pass the same 
+
+    # make the cert pass and keychain pass the same
     password = cert_pass
-    
+
     # Create keychain with full path: ~/Library/Keychains/build.keychain-db
     # This is like creating a secure storage box in the right location
     home_dir = os.path.expanduser("~")
     created_keychain = f"{home_dir}/Library/Keychains/{keychain}"
-    
+
     try:
         run_process("security", "delete-keychain", created_keychain)
     except Exception as e:
@@ -51,7 +50,7 @@ def security_import(cert: str, cert_pass: str, keychain: str) -> List[str]:
     run_process("security", "set-keychain-settings", created_keychain)
     run_process("security", "list-keychains", "-d", "user", "-s", *keychains)
     run_process("security", "import", cert, "-P", cert_pass, "-A", "-k", created_keychain, "-f", "pkcs12")
-    
+
     # Set key partition list - IMPORTANT: use created_keychain, not keychain
     run_process(
         "security",
@@ -59,7 +58,7 @@ def security_import(cert: str, cert_pass: str, keychain: str) -> List[str]:
         password,
         created_keychain,
     )
-    
+
     identity: str = decode_clean(run_process("security", "find-identity", "-p", "appleID", "-v", created_keychain).stdout)
     return [line.strip('"') for line in re.findall('".*"', identity)]
 
@@ -83,7 +82,7 @@ def dump_prov_entitlements(prov_file: Path) -> Dict[Any, Any]:
 def codesign_async(identity: str, component: Path, entitlements: Path = None):
     """Start codesign process asynchronously."""
     from .utils import run_process_async
-    
+
     cmd = ["codesign", "--continue", "-f", "--no-strict", "-s", identity]
     if entitlements:
         cmd.extend(["--entitlements", str(entitlements)])

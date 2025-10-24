@@ -76,7 +76,7 @@ def fastlane_register_app_extras(
 ):
     """Register app extras (groups, iCloud containers) with Apple Developer Portal."""
     from .utils import run_process_async, popen_check
-    
+
     matched_ids: Set[str] = set()
     for k, v in entitlements.items():
         if k in matchable_entitlements:
@@ -243,7 +243,7 @@ def fastlane_get_prov_profile(
     import tempfile
     import shutil
     from .webhooks import report_progress
-    
+
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
     my_env["FASTLANE_PASSWORD"] = account_pass
@@ -276,16 +276,16 @@ def fastlane_get_prov_profile(
 
 
 def fastlane_get_certificate(
-    account_name: str, 
-    account_pass: str, 
-    team_id: str, 
+    account_name: str,
+    account_pass: str,
+    team_id: str,
     account_id: str,
     cert_pass: str,
     cert_type: str = "development"
 ) -> Optional[str]:
     """
     Generate or retrieve certificate using Fastlane.
-    
+
     Args:
         account_name: Apple Developer account email
         account_pass: Apple Developer account password
@@ -293,7 +293,7 @@ def fastlane_get_certificate(
         account_id: Server account ID for certificate storage
         keychain_name: Keychain name for certificate storage
         cert_type: Certificate type (development or distribution)
-    
+
     Returns:
         Path to certificate file or None if failed
     """
@@ -301,21 +301,25 @@ def fastlane_get_certificate(
     import shutil
     import base64
     from .webhooks import get_certificate_from_server, upload_certificate, report_progress
-    
+
+    # tmpdir = Path(tmpdir_str)
+    current_directory = os.getcwd()
+    tmpdir = Path(current_directory + "/tmp")
+    os.makedirs(tmpdir, exist_ok=True)
+
     report_progress(22, "Checking for existing certificate")
-    
+
     # Try to get certificate from server first
     cert_info = get_certificate_from_server(account_id)
     if cert_info and cert_info.get("certificate_data"):
         print("Using existing certificate from server")
         report_progress(28, "Using cached certificate")
-        
+
         # Save certificate data to temporary file
         cert_data = cert_info["certificate_data"]
         decoded_bytes = base64.b64decode(cert_data)
 
-        current_directory = os.getcwd()
-        file_path = os.path.join(current_directory, "tmp/downloaded_cert.p12")
+        file_path = os.path.join(tmpdir, "downloaded_cert.p12")
         with open(file_path, "wb") as f:   # use "wb" for binary data
             f.write(decoded_bytes)
             return f.name
@@ -323,23 +327,19 @@ def fastlane_get_certificate(
     # No certificate found on server, generate new one
     print("Generating new certificate with Fastlane")
     report_progress(24, "Generating new certificate (this may take a moment)")
-    
+
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
-    
-    with tempfile.TemporaryDirectory() as tmpdir_str:
-        # tmpdir = Path(tmpdir_str)
-        current_directory = os.getcwd()
-        tmpdir = Path(current_directory + "/tmp")
 
+    with tempfile.TemporaryDirectory() as tmpdir_str:
         try:
             # Generate certificate using Fastlane cert
             # The cert_type_flag tells Fastlane what kind of certificate to create
             # Think of it like choosing between a "student ID" (development) or "official ID" (distribution)
             cert_type_flag = "--development" if cert_type == "development" else "--distribution"
-            
+
             run_process(
                 "fastlane",
                 "cert",
@@ -352,41 +352,41 @@ def fastlane_get_certificate(
                 "cert.p12",
                 env=my_env,
             )
-            
+
             # Fastlane creates THREE files:
             # 1. xx.p12 - contains ONLY the private key
             # 2. xx.cer - contains ONLY the certificate
             # 3. xx.certSigningRequest - the signing request (not needed anymore)
-            # 
+            #
             # We need to COMBINE the private key and certificate into ONE final .p12 file
             # that can be used for iOS signing
-            
+
             private_key_p12 = None
             certificate_cer = None
-            
+
             # Find the private key file (.p12)
             for file in tmpdir.glob("*.p12"):
                 if not str(file).endswith(".p12.cer"):
                     private_key_p12 = file
                     print(f"Found private key file: {file.name}")
                     break
-            
+
             # Find the certificate file (.cer)
             for file in tmpdir.glob("*.cer"):
                 if str(file).endswith(".p12.cer"):
                     certificate_cer = file
                     print(f"Found certificate file: {file.name}")
                     break
-            
+
             if not private_key_p12 or not certificate_cer:
                 all_files = list(tmpdir.glob("*"))
                 raise Exception(f"Certificate generation failed - missing files. Found: {[f.name for f in all_files]}")
-            
+
             # Now combine the private key and certificate into a final .p12 file
             # This is like putting the key and lock together so they work as one
             print("Combining private key and certificate into final .p12 file...")
             report_progress(30, "Combining certificate components")
-            
+
             actual_cert_path = Path(str(tmpdir) + "/combined.p12")
             run_process(
                 "openssl",
@@ -402,16 +402,16 @@ def fastlane_get_certificate(
             with open(actual_cert_path, 'rb') as f:
                 cert_bytes = f.read()
                 cert_data_encoded = base64.b64encode(cert_bytes).decode('utf-8')
-            
+
             report_progress(33, "Certificate generated, uploading to server")
-            
+
             # Upload to server
             upload_certificate(account_id, team_id, cert_data_encoded)
-            
+
             report_progress(35, "Certificate uploaded and ready")
 
             return str(actual_cert_path)
-            
+
         except Exception as e:
             print(f"Certificate generation failed: {e}")
             report_progress(0, f"Certificate generation failed: {e}", state=0)
@@ -426,33 +426,33 @@ def fastlane_register_device(
 ):
     """
     Register device with Apple Developer Portal using Fastlane.
-    
+
     Args:
         account_name: Apple Developer account email
         account_pass: Apple Developer account password
         team_id: Apple Developer team ID
         device_udid: Device UDID to register (e.g., "00008101-001451CC0E01001E")
         device_name: Optional device name (defaults to "Device {UDID[:8]}")
-    
+
     This function registers a new device with your Apple Developer account so it can
     be included in development provisioning profiles. Think of it like adding someone's
     name to a guest list before sending them an invitation!
     """
     from .webhooks import report_progress
-    
+
     # Generate a friendly device name if not provided
     # Using first 8 characters of UDID to make it recognizable
     if device_name is None:
         device_name = f"Device {device_udid[:8]}"
-    
+
     print(f"Registering device: {device_name} (UDID: {device_udid})")
     report_progress(48, f"Registering device with Apple")
-    
+
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
-    
+
     try:
         # Register the device using Fastlane
         # The 'run' command executes a Fastlane action directly
@@ -465,10 +465,10 @@ def fastlane_register_device(
             f"name:{clean_dev_portal_name(device_name)}",
             env=my_env,
         )
-        
+
         print(f"✓ Device registered successfully: {device_name}")
         report_progress(49, "Device registered successfully")
-        
+
     except Exception as e:
         # If device is already registered, Fastlane will throw an error
         # but that's actually okay - we just want to make sure it exists

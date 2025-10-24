@@ -74,7 +74,7 @@ def run(job_data, account_data, keychain_name):
         raise Exception("Developer account information required but not found in job data.")
 
     report_progress(8, "Setting up environment")
-    
+
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
         print("Extracting app...")
@@ -134,7 +134,7 @@ def run(job_data, account_data, keychain_name):
     # 3. Confirm upload completion
     if not upload_signed_ipa(str(signed_ipa)):
         raise Exception("Failed to upload signed IPA")
-    
+
     report_progress(96, "Upload completed, finalizing job")
     complete_job(str(signed_ipa))
     report_progress(100, "✓ Signing job completed successfully!")

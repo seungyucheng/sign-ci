@@ -12,16 +12,15 @@ import tempfile
 from pathlib import Path
 from typing import Dict
 from .utils import (
-    safe_glob, extract_zip, extract_tar, move_merge_replace, 
-    get_binary_map, get_otool_imports, install_name_change, 
+    safe_glob, extract_zip, extract_tar, move_merge_replace,
+    get_binary_map, get_otool_imports, install_name_change,
     insert_dylib, plist_load, get_info_plist_path, get_main_app_path
 )
-
 
 def extract_deb(app_bin_name: str, app_bundle_id: str, archive: Path, dest_dir: Path):
     """Extract .deb package and filter relevant files for the target app."""
     from .utils import run_process, extract_tar
-    
+
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
         run_process("ar", "x", str(archive.resolve()), cwd=str(temp_dir))

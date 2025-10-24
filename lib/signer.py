@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, NamedTuple, Set, Tuple, Any, Optional
 
 from .utils import (
-    safe_glob, plist_load, plist_dump, print_object, 
+    safe_glob, plist_load, plist_dump, print_object,
     get_info_plist_path, get_main_app_path, rand_str, binary_replace, get_app_type
 )
 from .security import codesign_async, codesign_dump_entitlements, dump_prov_entitlements, security_import
@@ -63,7 +63,7 @@ class ComponentData(NamedTuple):
 
 class Signer:
     """Main class that handles the iOS app signing process."""
-    
+
     def __init__(self, opts: SignOpts):
         """Initialize the signer with configuration options."""
         self.opts = opts
@@ -86,7 +86,7 @@ class Signer:
 
         # Determine main bundle ID based on configuration
         self._determine_main_bundle_id()
-        
+
         # Configure bundle name if specified
         if opts.bundle_name:
             print(f"Setting CFBundleDisplayName to {opts.bundle_name}")
@@ -118,7 +118,7 @@ class Signer:
             if watch_dir.exists():
                 print(f"Removing {watch_name} directory")
                 shutil.rmtree(watch_dir)
-        
+
         # Identify all components to be signed (depth-first order)
         component_exts = ["*.app", "*.appex", "*.framework", "*.dylib", "PlugIns/*.bundle"]
         self.components = [item for e in component_exts for item in safe_glob(main_app, "**/" + e)][::-1]
@@ -127,7 +127,7 @@ class Signer:
     def _determine_main_bundle_id(self):
         """Determine the main bundle ID based on configuration."""
         from .utils import  get_or_create_bundle_id
-        
+
         if self.opts.prov_file:
             if self.opts.bundle_id is None:
                 print("Using original bundle id")
@@ -164,11 +164,11 @@ class Signer:
             return input_id
         if not self.opts.encode_ids:
             return input_id
-        
+
         # Check if we have a mapping from the comprehensive system
         if input_id in self.mappings:
             return self.mappings[input_id]
-            
+
         # Fallback to original random generation
         new_parts = map(lambda x: rand_str(len(x), x + self.opts.team_id), input_id.split("."))
         result = ".".join(new_parts)
@@ -273,13 +273,13 @@ class Signer:
     def _get_extension_bundle_suffix(self, component: Path) -> Optional[str]:
         """
         Detect extension type and return appropriate bundle ID suffix.
-        
+
         This method reads the extension's Info.plist and checks the NSExtensionPointIdentifier
         to determine what type of extension it is, then returns the appropriate suffix.
-        
+
         Args:
             component: Path to the component (.appex file)
-            
+
         Returns:
             Custom suffix string (like '.widgetkit') for known extension types,
             or None if not an extension or unknown type
@@ -287,14 +287,14 @@ class Signer:
         try:
             info_plist = get_info_plist_path(component)
             info: Dict[Any, Any] = plist_load(info_plist)
-            
+
             # Check if this component has extension information
             ns_extension = info.get("NSExtension", {})
             if not ns_extension:
                 return None
-                
+
             extension_point = ns_extension.get("NSExtensionPointIdentifier", "")
-            
+
             # Map extension point identifiers to bundle ID suffixes
             # Comprehensive list of iOS/iPadOS/watchOS extension types
             extension_map = {
@@ -303,75 +303,75 @@ class Signer:
                 "com.apple.widget-extension": ".widgetkit",  # Legacy widget
                 "com.apple.today-widget": ".todaywidget",
                 "com.apple.glance-widget": ".glancewidget",  # watchOS
-                
+
                 # Notification Extensions
                 "com.apple.usernotifications.service": ".notificationservice",
                 "com.apple.usernotifications.content-extension": ".notificationcontent",
-                
+
                 # Share & Action Extensions
                 "com.apple.share-services": ".shareextension",
                 "com.apple.ui-services": ".actionextension",
-                
+
                 # Media Extensions
                 "com.apple.photo-editing": ".photoediting",
                 "com.apple.audiounit-ui": ".audiounit",
                 "com.apple.broadcast-services-upload": ".broadcastupload",
                 "com.apple.broadcast-services-setup": ".broadcastsetup",
-                
+
                 # Keyboard & Input Extensions
                 "com.apple.keyboard-service": ".keyboard",
-                
+
                 # iMessage Extensions
                 "com.apple.message-payload-provider": ".imessage",
                 "com.apple.messages.MSMessagesAppExtension": ".imessageapp",
                 "com.apple.messages-sticker-pack": ".stickers",
-                
+
                 # Siri & Intents Extensions
                 "com.apple.intents-service": ".intents",
                 "com.apple.intents-ui-service": ".intentsui",
-                
+
                 # File & Document Extensions
                 "com.apple.fileprovider-ui": ".fileproviderui",
                 "com.apple.fileprovider-nonui": ".fileprovider",
                 "com.apple.quicklook.preview": ".quicklook",
                 "com.apple.DocumentPicker": ".documentpicker",
-                
+
                 # Security & Privacy Extensions
                 "com.apple.authentication-services-credential-provider-ui": ".credentialprovider",
                 "com.apple.callkit.call-directory": ".calldirectory",
                 "com.apple.identitylookup.message-filter": ".messagefilter",
-                
+
                 # Content & Safari Extensions
                 "com.apple.Safari.content-blocker": ".contentblocker",
                 "com.apple.Safari.extension": ".safariextension",
                 "com.apple.Safari.web-extension": ".safariwebextension",
-                
+
                 # Network Extensions
                 "com.apple.networkextension.packet-tunnel": ".vpn",
                 "com.apple.networkextension.app-proxy": ".appproxy",
                 "com.apple.networkextension.filter-data": ".filterdata",
                 "com.apple.networkextension.filter-control": ".filtercontrol",
                 "com.apple.networkextension.dns-proxy": ".dnsproxy",
-                
+
                 # Spotlight & Search Extensions
                 "com.apple.spotlight.index": ".spotlightindex",
                 "com.apple.services": ".services",
-                
+
                 # Location Extensions
                 "com.apple.location.push.service": ".locationpush",
-                
+
                 # ClassKit Extensions
                 "com.apple.classkit.context-provider": ".classkit",
-                
+
                 # Matter Extensions
                 "com.apple.matter.support.extension.device-setup": ".mattersetup",
-                
+
                 # Background Assets
                 "com.apple.background-asset-downloader-extension": ".backgroundassets",
             }
-            
+
             return extension_map.get(extension_point)
-            
+
         except Exception as e:
             print(f"Could not detect extension type for {component.name}: {e}")
             return None
@@ -381,10 +381,10 @@ class Signer:
         info_plist = get_info_plist_path(component)
         info: Dict[Any, Any] = plist_load(info_plist)
         old_bundle_id = info["CFBundleIdentifier"]
-        
+
         # Check if this is an extension with a custom bundle ID pattern
         custom_suffix = self._get_extension_bundle_suffix(component)
-        
+
         if custom_suffix:
             # Use the custom extension pattern (e.g., .widgetkit for widgets)
             bundle_id = f"{self.main_bundle_id}{custom_suffix}"
@@ -519,7 +519,7 @@ class Signer:
             "com.apple.security.network.client",
             "com.apple.security.network.server",
         ]
-        
+
         entitlements = copy.deepcopy(old_entitlements)
         for entitlement in list(entitlements):
             if entitlement not in supported_entitlements:
@@ -590,7 +590,7 @@ class Signer:
     def sign(self):
         """Execute the complete signing process."""
         from .utils import popen_check
-        
+
         with tempfile.TemporaryDirectory() as tmpdir_str:
             tmpdir = Path(tmpdir_str)
 

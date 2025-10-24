@@ -2,7 +2,7 @@ name: iOS App Signing
 
 on:
   repository_dispatch:
-    types: [resign] 
+    types: [resign]
   workflow_dispatch:
     inputs:
       job_id:
@@ -30,7 +30,7 @@ jobs:
       # Support both workflow_dispatch (manual) and repository_dispatch (API)
       # workflow_dispatch uses 'inputs.*', repository_dispatch uses 'github.event.client_payload.*'
       SECRET_URL: "${{ inputs.job_url || github.event.client_payload.job_url }}"
-      API_TOKEN: "${{ inputs.api_token || github.event.client_payload.api_token || secrets.API_TOKEN }}"
+      API_TOKEN: "${{ inputs.api_token || github.event.client_payload.api_token }}"
       JOB_ID: "${{ inputs.job_id || github.event.client_payload.job_id }}"
       SECRET_KEY: "${{ inputs.secret_key || github.event.client_payload.secret_key }}"
     steps:
