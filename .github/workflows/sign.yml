@@ -25,7 +25,7 @@ on:
 jobs:
   sign:
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       # Support both workflow_dispatch (manual) and repository_dispatch (API)
       # workflow_dispatch uses 'inputs.*', repository_dispatch uses 'github.event.client_payload.*'
