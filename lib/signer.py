@@ -616,13 +616,13 @@ class Signer:
                 "If you receive a two-factor authentication (2FA) code, please submit it to the web service.",
                 sep="\n",
             )
-            report_progress(37, "Authenticating with Apple Developer Portal")
+            report_progress(20, "Authenticating with Apple Developer Portal")
             fastlane_auth(self.opts.account_name, self.opts.account_pass, self.opts.team_id)
-            report_progress(40, "Authentication successful")
+            report_progress(25, "Authentication successful")
 
             # Generate or retrieve certificate from server
             print("Generating or retrieving certificate...")
-            report_progress(42, "Setting up signing certificate")
+            report_progress(28, "Setting up signing certificate")
             cert_type = "distribution" if self.is_distribution else "development"
 
             cert_pass = "03c7c0ace39"
@@ -636,9 +636,9 @@ class Signer:
             )
             if certificate_path:
                 print(f"Certificate ready at: {certificate_path}")
-                report_progress(43, "Importing certificate to keychain")
+                report_progress(35, "Importing certificate to keychain")
                 security_import(certificate_path, cert_pass,  self.opts.keychain_name)
-                report_progress(46, "Certificate setup complete")
+                report_progress(38, "Certificate setup complete")
             else:
                 raise Exception("Failed to generate certificate")
 
@@ -650,7 +650,7 @@ class Signer:
                 self.opts.team_id,
                 self.opts.device_udid
             )
-            report_progress(51, "Device registered successfully")
+            report_progress(44, "Device registered successfully")
 
             # Sign all components
             jobs: Dict[Path, subprocess.Popen] = {}
@@ -659,7 +659,7 @@ class Signer:
 
             for component, data in job_defs:
                 current_component += 1
-                progress = 50 + (current_component * 28 // total_components)  # 50-78% for signing components
+                progress = 45 + (current_component * 27 // total_components)  # 45-72% for signing components
                 component_name = component.name if hasattr(component, 'name') else str(component).split('/')[-1]
                 print(f"Processing component {component}")
                 report_progress(progress, f"Signing: {component_name} ({current_component}/{total_components})")

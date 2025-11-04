@@ -249,7 +249,7 @@ def fastlane_get_prov_profile(
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
 
-    report_progress(65, f"Generating provisioning profile for {bundle_id}")
+    report_progress(43, f"Generating provisioning profile for {bundle_id}")
 
     with tempfile.TemporaryDirectory() as tmpdir_str:
         run_process(
@@ -307,13 +307,13 @@ def fastlane_get_certificate(
     tmpdir = Path(current_directory + "/tmp")
     os.makedirs(tmpdir, exist_ok=True)
 
-    report_progress(22, "Checking for existing certificate")
+    report_progress(29, "Checking for existing certificate")
 
     # Try to get certificate from server first
     cert_info = get_certificate_from_server(account_id)
     if cert_info and cert_info.get("certificate_data"):
         print("Using existing certificate from server")
-        report_progress(28, "Using cached certificate")
+        report_progress(30, "Using cached certificate")
 
         # Save certificate data to temporary file
         cert_data = cert_info["certificate_data"]
@@ -326,7 +326,7 @@ def fastlane_get_certificate(
 
     # No certificate found on server, generate new one
     print("Generating new certificate with Fastlane")
-    report_progress(24, "Generating new certificate (this may take a moment)")
+    report_progress(31, "Generating new certificate (this may take a moment)")
 
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
@@ -385,7 +385,7 @@ def fastlane_get_certificate(
             # Now combine the private key and certificate into a final .p12 file
             # This is like putting the key and lock together so they work as one
             print("Combining private key and certificate into final .p12 file...")
-            report_progress(30, "Combining certificate components")
+            report_progress(32, "Combining certificate components")
 
             actual_cert_path = Path(str(tmpdir) + "/combined.p12")
             run_process(
@@ -408,7 +408,7 @@ def fastlane_get_certificate(
             # Upload to server
             upload_certificate(account_id, team_id, cert_data_encoded)
 
-            report_progress(35, "Certificate uploaded and ready")
+            report_progress(34, "Certificate uploaded and ready")
 
             return str(actual_cert_path)
 
@@ -446,7 +446,7 @@ def fastlane_register_device(
         device_name = f"Device {device_udid[:8]}"
 
     print(f"Registering device: {device_name} (UDID: {device_udid})")
-    report_progress(48, f"Registering device with Apple")
+    report_progress(40, f"Registering device with Apple")
 
     my_env = os.environ.copy()
     my_env["FASTLANE_USER"] = account_name
@@ -467,7 +467,7 @@ def fastlane_register_device(
         )
 
         print(f"✓ Device registered successfully: {device_name}")
-        report_progress(49, "Device registered successfully")
+        report_progress(41, "Device registered successfully")
 
     except Exception as e:
         # If device is already registered, Fastlane will throw an error
@@ -475,7 +475,7 @@ def fastlane_register_device(
         error_message = str(e)
         if "already exists" in error_message.lower() or "already registered" in error_message.lower():
             print(f"✓ Device already registered: {device_name}")
-            report_progress(50, "Device already registered")
+            report_progress(41, "Device already registered")
         else:
             print(f"✗ Failed to register device: {error_message}")
             raise
