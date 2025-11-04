@@ -580,7 +580,7 @@ class Signer:
                     if remap_def.prefix_only:
                         new_id = remap_def.prefix + remap_id
                     else:
-                        new_id = remap_def.prefix + self.gen_id(remap_id)
+                        new_id = remap_def.prefix + self.main_bundle_id
                         self.mappings[remap_def.prefix + remap_id] = new_id
 
                     entitlements[entitlement].append(new_id)
