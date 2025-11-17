@@ -285,6 +285,7 @@ def upload_file_to_s3(file_path: str, upload_url: str) -> bool:
             "curl",
             "-X", "PUT",
             "-T", str(file_path),
+            "-H", "Content-Type: application/octet-stream",
             "--progress-bar",
             upload_url,
             check=True,
