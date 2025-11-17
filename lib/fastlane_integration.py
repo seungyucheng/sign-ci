@@ -249,8 +249,6 @@ def fastlane_get_prov_profile(
     my_env["FASTLANE_PASSWORD"] = account_pass
     my_env["FASTLANE_TEAM_ID"] = team_id
 
-    report_progress(43, f"Generating provisioning profile for {bundle_id}")
-
     with tempfile.TemporaryDirectory() as tmpdir_str:
         run_process(
             "fastlane",
