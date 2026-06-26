@@ -26,8 +26,8 @@ def fastlane_auth(account_name: str, account_pass: str, team_id: str):
     my_env["FASTLANE_TEAM_ID"] = team_id
 
     auth_pipe = subprocess.Popen(
-        # enable copy to clipboard so we're not interactively prompted
-        ["fastlane", "spaceauth", "--copy_to_clipboard"],
+        # pass an explicit value so fastlane skips the interactive clipboard prompt
+        ["fastlane", "spaceauth", "--copy_to_clipboard", "false"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -318,7 +318,7 @@ def fastlane_get_certificate(
         decoded_bytes = base64.b64decode(cert_data)
 
         file_path = os.path.join(tmpdir, "downloaded_cert.p12")
-        with open(file_path, "wb") as f:   # use "wb" for binary data
+        with open(file_path, "wb") as f:  # use "wb" for binary data
             f.write(decoded_bytes)
             return f.name
 
