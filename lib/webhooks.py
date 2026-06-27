@@ -8,6 +8,8 @@ job status updates, and certificate/profile status reporting.
 
 import os
 import json
+import tempfile
+import xml.etree.ElementTree as ET
 from typing import Dict, Any, Optional
 from .utils import run_process, decode_clean
 
@@ -66,6 +68,28 @@ def webhook_request(
         check=check,
         capture=True,
     )
+
+
+def _format_upload_error(response_body: str) -> str:
+    """Extract a concise S3/R2 error reason from an XML response body."""
+    body = response_body.strip()
+    if not body.startswith("<"):
+        return body
+
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return body
+
+    code = root.findtext("Code")
+    message = root.findtext("Message")
+    if code and message:
+        return f"{code}: {message}"
+    if message:
+        return message
+    if code:
+        return code
+    return body
 
 
 def report_progress(progress: int, message: str = "", state: int = 1):
@@ -277,20 +301,32 @@ def upload_file_to_s3(file_path: str, upload_url: str) -> bool:
         print(f"Uploading file: {file_path}")
         print(f"File size: {os.path.getsize(file_path) / (1024*1024):.2f} MB")
 
-        # Use curl to upload the file with PUT method
-        # -X PUT: Use PUT HTTP method (required for S3 uploads)
-        # -T: Upload file from this path
-        # --progress-bar: Show a nice progress indicator
-        result = run_process(
-            "curl",
-            "-X", "PUT",
-            "-T", str(file_path),
-            "-H", "Content-Type: application/octet-stream",
-            "--progress-bar",
-            upload_url,
-            check=True,
-            capture=False  # Let curl show progress to console
-        )
+        with tempfile.NamedTemporaryFile() as response_body:
+            # Use curl to upload the file with PUT method.
+            # --fail-with-body makes HTTP errors fail while keeping the server reason.
+            result = run_process(
+                "curl",
+                "-X", "PUT",
+                "-T", str(file_path),
+                "-H", "Content-Type: application/octet-stream",
+                "--fail-with-body",
+                "--show-error",
+                "--progress-bar",
+                "-o", response_body.name,
+                upload_url,
+                check=False,
+                capture=False  # Let curl show progress to console
+            )
+
+            if result.returncode != 0:
+                response_body.seek(0)
+                reason = _format_upload_error(decode_clean(response_body.read()))
+                print(f"Failed to upload file to S3 (curl exit code {result.returncode})")
+                if reason:
+                    print(f"Reason: {reason}")
+                else:
+                    print("Reason: curl did not return a response body; see curl output above.")
+                return False
 
         print("✓ File uploaded successfully to S3")
         return True
